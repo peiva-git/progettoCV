@@ -53,3 +53,32 @@ for ii=1:imagesNumber
 end
 
 %%
+% zhang method applied knowing homography
+% homography estimation provided in lab1
+
+for ii=1:imagesNumber
+    XYpixels = imageData(ii).XYpixels;
+    XYmm = imageData(ii).XYmm;
+    A = [];
+    b = [];
+    
+    for jj=1:length(XYpixels)
+        
+        Xpixels = XYpixels(jj, 1);
+        Ypixels = XYpixels(jj, 2);
+        Xmm = XYmm(jj, 1);
+        Ymm = XYmm(jj, 2);
+        
+        m = [Xmm; Ymm; 1];
+        zero = [0; 0; 0];
+        A = [A; m' zero' -Xpixels*m'; zero' m' -Ypixels*m'];
+        b = [b; 0; 0];
+        
+    end
+    
+    [U, S, V] = svd(A);
+    h = V(:, end);
+    
+    imageData(ii).H = reshape(h, [3 3])';
+    
+end
