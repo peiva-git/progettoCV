@@ -82,3 +82,32 @@ for ii=1:imagesNumber
     imageData(ii).H = reshape(h, [3 3])';
     
 end
+%%
+% check if it works, superimpose rectangle
+% from lab1
+
+for ii=1:imagesNumber
+    figure
+    imshow(imageData(ii).image, 'InitialMagnification', 200)
+    hold on
+    
+    width = 150;
+    height = 120;
+    
+    topLeftCornerX = 90;
+    topLeftCornerY = 60;
+    
+    rectLengthX = topLeftCornerX + [0 0 width width];
+    rectLengthY = topLeftCornerY + [0 height height 0];
+    
+    homogeneous = [rectLengthX; rectLengthY; ones(1, length(rectLengthX))];
+    homProjection = imageData(ii).H * homogeneous;
+    
+    projection = [homProjection(1, :)./homProjection(3, :);...
+        homProjection(2, :)./homProjection(3, :)];
+    
+    projection(:, end + 1) = projection(:, 1);
+    
+    plot(projection(1, :), projection(2, :), 'r', 'LineWidth', 3);
+    pause(1)
+end
