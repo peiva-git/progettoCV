@@ -54,13 +54,13 @@ end
 
 %%
 % zhang method applied knowing homography
-% homography estimation provided in lab1
+% homography estimation provided in lab1, esimate now
 
 for ii=1:imagesNumber
     XYpixels = imageData(ii).XYpixels;
     XYmm = imageData(ii).XYmm;
     A = [];
-    b = [];
+%    b = [];
     
     for jj=1:length(XYpixels)
         
@@ -72,7 +72,7 @@ for ii=1:imagesNumber
         m = [Xmm; Ymm; 1];
         zero = [0; 0; 0];
         A = [A; m' zero' -Xpixels*m'; zero' m' -Ypixels*m'];
-        b = [b; 0; 0];
+%        b = [b; 0; 0];
         
     end
     
@@ -110,4 +110,44 @@ for ii=1:imagesNumber
     
     plot(projection(1, :), projection(2, :), 'r', 'LineWidth', 3);
     pause(1)
+end
+%%
+% Zhang method, obtain b vector (L2-p73)
+
+V = [];
+
+for ii=1:imagesNumber
+    currentH = imageData(ii).H;
+    
+    V = [V; compute_v_ij(1, 2, currentH)';...
+        (compute_v_ij(1, 1,  currentH) - compute_v_ij(2, 2, currentH))']; 
+end
+
+[U, D, S] = svd(V);
+b = S(:, end);
+
+% now to build B matrix (L2-p73)
+
+B = [b(1) b(2) b(4); b(2) b(3) b(5); b(4) b(5) b(6)];
+L = chol(B, 'lower');
+K = inv(L');
+
+% set proper scale
+K = K/K(3, 3);
+
+% extrinsic parameters are computed for each image (L2-p73)
+for ii=1:imagesNumber
+    currentH = imageData(ii).H;
+    lambda = 1/norm(K \ currentH(:, 1)); % using of inv discuraged by matlab
+    
+    r_1 = lambda * K \ currentH(:, 1);
+    r_2 = lambda * K \ currentH(:, 2);
+    R = [r_1, r_2, cross(r_1, r_2)];
+    
+    % find closest orthogonal matrix in F norm
+    [U, S, V] = svd(R);
+    R = U * V';
+    
+    imageData(ii).R = R;
+    imageData(ii).t = lambda * K \ currentH(:, 3);
 end
