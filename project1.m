@@ -126,6 +126,9 @@ end
 [U, D, S] = svd(V);
 b = S(:, end);
 
+% need to divide to have positive definite B? (defined up to scale factor)
+b = b/b(6);
+
 % now to build B matrix (L2-p73)
 
 B = [b(1) b(2) b(4); b(2) b(3) b(5); b(4) b(5) b(6)];
