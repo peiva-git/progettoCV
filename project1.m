@@ -154,3 +154,26 @@ for ii=1:imagesNumber
     imageData(ii).R = R;
     imageData(ii).t = lambda * K \ currentH(:, 3);
 end
+%%
+% compute and show reprojected points for chosen image
+% get matrix P
+
+imageIndex = 1;
+
+P = K * [imageData(imageIndex).R, imageData(imageIndex).t];
+
+figure
+imshow(imageData(imageIndex).image, 'InitialMagnification', 200)
+hold on
+
+for jj=1:length(imageData(imageIndex).XYmm)
+    
+    pointSpace = [imageData(imageIndex).XYmm(jj, 1);...
+        imageData(imageIndex).XYmm(jj, 2); 0; 1];
+    pointSpace = -pointSpace;
+
+    plot(imageData(imageIndex).XYpixels(jj, 1),...
+        imageData(imageIndex).XYpixels(jj, 2), 'r+')
+    plot((P(1, :)*pointSpace)/(P(3, :)*pointSpace),...
+        (P(2, :)*pointSpace)/(P(3, :)*pointSpace), 'g+')
+end
