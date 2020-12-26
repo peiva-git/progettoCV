@@ -147,33 +147,42 @@ for ii=1:imagesNumber
     r_2 = lambda * K \ currentH(:, 2);
     R = [r_1, r_2, cross(r_1, r_2)];
     
-    % find closest orthogonal matrix in F norm
+    % find closest orthogonal matrix in Frobenius norm
     [U, S, V] = svd(R);
-    R = U * V';
+    R_orthogonal = U * V';
     
     imageData(ii).R = R;
+    imageData(ii).R_orthogonal = R_orthogonal;
     imageData(ii).t = lambda * K \ currentH(:, 3);
 end
 %%
 % compute and show reprojected points for chosen image
+% compute total reprojection error
 % get matrix P
 
 imageIndex = 1;
 
+% matrix P not working if using R_orthogonal
 P = K * [imageData(imageIndex).R, imageData(imageIndex).t];
 
 figure
 imshow(imageData(imageIndex).image, 'InitialMagnification', 200)
 hold on
 
+totalReprojectionError = 0;
+
 for jj=1:length(imageData(imageIndex).XYmm)
     
     pointSpace = [imageData(imageIndex).XYmm(jj, 1);...
         imageData(imageIndex).XYmm(jj, 2); 0; 1];
-    pointSpace = -pointSpace;
+    projPointX = (P(1, :) * pointSpace) / (P(3, :) * pointSpace);
+    projPointY = (P(2, :) * pointSpace) / (P(3, :) * pointSpace);
+    imagePointX = imageData(imageIndex).XYpixels(jj, 1);
+    imagePointY = imageData(imageIndex).XYpixels(jj, 2);
 
-    plot(imageData(imageIndex).XYpixels(jj, 1),...
-        imageData(imageIndex).XYpixels(jj, 2), 'r+')
-    plot((P(1, :)*pointSpace)/(P(3, :)*pointSpace),...
-        (P(2, :)*pointSpace)/(P(3, :)*pointSpace), 'g+')
+    plot(imagePointX, imagePointY, 'r+')
+    plot(projPointX, projPointY, 'g+')
+    
+    totalReprojectionError = totalReprojectionError + (projPointX - imagePointX)^2 +...
+        (projPointY - imagePointY)^2;
 end
