@@ -211,6 +211,9 @@ alpha_v = K(2,2)*sin(skew_angle);
 
 for jj=1:length(imageData(imageIndex).XYmm)
     
+    projPointX = (P(1, :) * pointSpace) / (P(3, :) * pointSpace); %u^
+    projPointY = (P(2, :) * pointSpace) / (P(3, :) * pointSpace); %v^
+    
     while ReprojectionError ~= 0
     
         A = [];
@@ -218,8 +221,7 @@ for jj=1:length(imageData(imageIndex).XYmm)
 
         pointSpace = [imageData(imageIndex).XYmm(jj, 1);...
             imageData(imageIndex).XYmm(jj, 2); 0; 1];
-        projPointX = (P(1, :) * pointSpace) / (P(3, :) * pointSpace); %u^
-        projPointY = (P(2, :) * pointSpace) / (P(3, :) * pointSpace); %v^
+        
         imagePointX = imageData(imageIndex).XYpixels(jj, 1); %u
         imagePointY = imageData(imageIndex).XYpixels(jj, 2); %v
 
@@ -238,9 +240,11 @@ for jj=1:length(imageData(imageIndex).XYmm)
         %undistorted coordinate
         x_u = x*(1+k(1)*(x^2+y^2)+k(2)*(x^4+2*(x^2)*(y^2)+y^4));
         y_u = y*(1+k(1)*(x^2+y^2)+k(2)*(x^4+2*(x^2)*(y^2)+y^4));
-
-
+        
         ReprojectionError = (projPointX - imagePointX)^2 + (projPointY - imagePointY)^2; 
+        projPointX = x_u; 
+        projPointY = y_u; 
+        
     
     end
     
