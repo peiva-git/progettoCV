@@ -206,29 +206,43 @@ end
 u_0 = K(1,3);
 v_0 = K(2,3);
 alpha_u = K(1,1);
-skew_angle = arctan(K(1,2)/alpha_u);
+skew_angle = atan(K(1,2)/alpha_u);
 alpha_v = K(2,2)*sin(skew_angle);
 
 for jj=1:length(imageData(imageIndex).XYmm)
     
-    A = [];
-    b = [];
+    while ReprojectionError ~= 0
     
-    pointSpace = [imageData(imageIndex).XYmm(jj, 1);...
-        imageData(imageIndex).XYmm(jj, 2); 0; 1];
-    projPointX = (P(1, :) * pointSpace) / (P(3, :) * pointSpace); %u^
-    projPointY = (P(2, :) * pointSpace) / (P(3, :) * pointSpace); %v^
-    imagePointX = imageData(imageIndex).XYpixels(jj, 1); %u
-    imagePointY = imageData(imageIndex).XYpixels(jj, 2); %v
+        A = [];
+        b = [];
 
-    rd_2 = ((imagePointX-u_0)/alpha_u)^2 + ((imagePointY-v_0)/alpha_v)^2;
+        pointSpace = [imageData(imageIndex).XYmm(jj, 1);...
+            imageData(imageIndex).XYmm(jj, 2); 0; 1];
+        projPointX = (P(1, :) * pointSpace) / (P(3, :) * pointSpace); %u^
+        projPointY = (P(2, :) * pointSpace) / (P(3, :) * pointSpace); %v^
+        imagePointX = imageData(imageIndex).XYpixels(jj, 1); %u
+        imagePointY = imageData(imageIndex).XYpixels(jj, 2); %v
+
+        rd_2 = ((imagePointX-u_0)/alpha_u)^2 + ((imagePointY-v_0)/alpha_v)^2;
+
+        A = [(imagePointX-u_0)*rd_2 (imagePointX-u_0)*rd_2*rd_2;...
+            (imagePointY-v_0)*rd_2 (imagePointY-v_0)*rd_2*rd_2];
+
+        b = [projPointX-imagePointX ; projPointY - imagePointY];
+
+        k = (A'*A)\A'*b;
+
+        x = (imagePointX-u_0)/alpha_u;
+        y = (imagePointY-v_0)/alpha_v;
+
+        %undistorted coordinate
+        x_u = x*(1+k(1)*(x^2+y^2)+k(2)*(x^4+2*(x^2)*(y^2)+y^4));
+        y_u = y*(1+k(1)*(x^2+y^2)+k(2)*(x^4+2*(x^2)*(y^2)+y^4));
+
+
+        ReprojectionError = (projPointX - imagePointX)^2 + (projPointY - imagePointY)^2; 
     
-    A = [(imagePointX-u_0)*rd_2 (imagePointX-u_0)*rd_2*rd_2;...
-        (imagePointY-v_0)*rd_2 (imagePointY-v_0)*rd_2*rd_2];
-    
-    b = [projPointX-imagePointX ; projPointY - imagePointY];
-    
-    [k1 k2] = inv(A'*A)*A'*b;
+    end
     
 end
 
