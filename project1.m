@@ -241,9 +241,11 @@ for jj=1:length(imageData(imageIndex).XYmm)
         x_u = x*(1+k(1)*(x^2+y^2)+k(2)*(x^4+2*(x^2)*(y^2)+y^4));
         y_u = y*(1+k(1)*(x^2+y^2)+k(2)*(x^4+2*(x^2)*(y^2)+y^4));
         
-        ReprojectionError = (projPointX - imagePointX)^2 + (projPointY - imagePointY)^2; 
         projPointX = x_u; 
         projPointY = y_u; 
+        
+        ReprojectionError = (projPointX - imagePointX)^2 + (projPointY - imagePointY)^2; 
+       
         
     
     end
