@@ -111,8 +111,8 @@ for ii=1:imagesNumber
     plot(projection(1, :), projection(2, :), 'r', 'LineWidth', 3);
     pause(1)
 end
-
-%%POINT 1
+%%
+% POINT 1
 % Zhang method, obtain b vector (L2-p73)
 
 V = [];
@@ -156,8 +156,8 @@ for ii=1:imagesNumber
     imageData(ii).R_orthogonal = R_orthogonal;
     imageData(ii).t = lambda * K \ currentH(:, 3);
 end
-
-%POINT 2
+%%
+% POINT 2
 % compute and show reprojected points for chosen image
 % compute total reprojection error
 % get matrix P
@@ -188,33 +188,75 @@ for jj=1:length(imageData(imageIndex).XYmm)
     totalReprojectionError = totalReprojectionError + (projPointX - imagePointX)^2 +...
         (projPointY - imagePointY)^2;
 end
-
-
-%POINT 3
+%%
+% POINT 3
 %add radial distortion compensation 
 %(Lecture 2, page 70) to the basic Zhang’s calibration procedure
 
 %Given m and m' (correspondences) do the following:
-% 1 - estimate P and get intrinsic parameter from P
+% 1 - estimate P and get intrinsic parameters from P
 % 2 - estimate k1 and k2
 % 3 - compensate for radial distortion and get new m'(i) 
 % 4 - go to the step 1 until convergence of P and k1 and k2
 
 % We have already P = K [R | t]
-% get intrinsic parameter and rd
+% get intrinsic parameters and rd
 
 u_0 = K(1,3);
 v_0 = K(2,3);
 alpha_u = K(1,1);
-skew_angle = atan(K(1,2)/alpha_u);
+skew_angle = atan(alpha_u/K(1,2)); % cotan = 1/tan
 alpha_v = K(2,2)*sin(skew_angle);
+
+iterationsCounter = 40000;
+
+% first build linear system to estimate k using all correspondences in
+% the image
 
 for jj=1:length(imageData(imageIndex).XYmm)
     
-    projPointX = (P(1, :) * pointSpace) / (P(3, :) * pointSpace); %u^
-    projPointY = (P(2, :) * pointSpace) / (P(3, :) * pointSpace); %v^
+    A = [];
+    b = [];
     
-    while ReprojectionError ~= 0
+    pointSpace = [imageData(imageIndex).XYmm(jj, 1);...
+        imageData(imageIndex).XYmm(jj, 2); 0; 1];
+    
+    projPointX = (P(1, :) * pointSpace) / (P(3, :) * pointSpace); %u^ actual projections
+    projPointY = (P(2, :) * pointSpace) / (P(3, :) * pointSpace); %v^ actual projections
+    
+    imagePointX = imageData(imageIndex).XYpixels(jj, 1); %u ideal projections
+    imagePointY = imageData(imageIndex).XYpixels(jj, 2); %v ideal projections
+    
+    rd_2 = ((imagePointX - u_0)/alpha_u)^2 + ((imagePointY - v_0)/alpha_v)^2;
+    
+    A = [A; (imagePointX - u_0) * rd_2, (imagePointX - u_0) * rd_2 * rd_2;...
+        (imagePointY - v_0) * rd_2, (imagePointY - v_0) * rd_2 * rd_2];
+    
+    b = [b; projPointX - imagePointX; projPointY - imagePointY];
+end
+
+% now estimate k using least squares
+k = (A'*A)\A' * b; % k is 2x1 vector
+k_1 = k(1, 1);
+k_2 = k(2, 1);
+
+% now build nonlinear system to compensate distortion
+
+for jj = 1:length(imageData(imageIndex).XYmm)
+
+    B = [];
+    c = [];
+    
+    coorPointX = imageData(imageIndex).XYmm(jj, 1); % x^ actual coordinates
+    coorPointY = imageData(imageIndex).XYmm(jj, 2); % y^ actual coordinates
+    
+    % TODO solve nonlinear system with matlab
+    % iterate, using new coordinates with matrix P
+end
+
+% added to previous section
+%{
+    while totalReprojectionError > 0.1
     
         A = [];
         b = [];
@@ -222,8 +264,8 @@ for jj=1:length(imageData(imageIndex).XYmm)
         pointSpace = [imageData(imageIndex).XYmm(jj, 1);...
             imageData(imageIndex).XYmm(jj, 2); 0; 1];
         
-        imagePointX = imageData(imageIndex).XYpixels(jj, 1); %u
-        imagePointY = imageData(imageIndex).XYpixels(jj, 2); %v
+        imagePointX = imageData(imageIndex).XYpixels(jj, 1); %u ideal projections
+        imagePointY = imageData(imageIndex).XYpixels(jj, 2); %v ideal projections
 
         rd_2 = ((imagePointX-u_0)/alpha_u)^2 + ((imagePointY-v_0)/alpha_v)^2;
 
@@ -249,9 +291,7 @@ for jj=1:length(imageData(imageIndex).XYmm)
         
     
     end
-    
-end
-
+%}
  
 
 
