@@ -252,25 +252,31 @@ for ii=1:imagesNumber
         nonlinearCompensation = eqnproblem; % optimization toolbox
         coord = optimvar('coord', 2);
         
-        coordActualX = imageData(ii).XYmm(jj, 1); % x^ actual coordinates
-        coordActualY = imageData(ii).XYmm(jj, 2); % y^ actual coordinates
+        pointSpace = [imageData(ii).XYmm(jj, 1);...
+            imageData(ii).XYmm(jj, 2); 0; 1];
         
-        equation_1 = coord(1) * (1 + k_1 * (coord(1)^2 + coord(2)^2) + k_2 * (coord(1)^4 + 2 * (coord(1)^2) * (coord(2)^2) + coord(2)^4)) - coordActualX == 0;
-        equation_2 = coord(2) * (1 + k_1 * (coord(1)^2 + coord(2)^2) + k_2 * (coord(1)^4 + 2 * (coord(1)^2) * (coord(2)^2) + coord(2)^4)) - coordActualY == 0;
+        projPointX = (P(1, :) * pointSpace) / (P(3, :) * pointSpace); % u^
+        projPointY = (P(2, :) * pointSpace) / (P(3, :) * pointSpace); % u^
+        
+        pointActualX = (projPointX - u_0) / alpha_u; % x^ actual coordinates
+        pointActualY = (projPointY - v_0) / alpha_v; % y^ actual coordinates
+        
+        equation_1 = coord(1) * (1 + k_1 * (coord(1)^2 + coord(2)^2) + k_2 * (coord(1)^4 + 2 * (coord(1)^2) * (coord(2)^2) + coord(2)^4)) - pointActualX == 0;
+        equation_2 = coord(2) * (1 + k_1 * (coord(1)^2 + coord(2)^2) + k_2 * (coord(1)^4 + 2 * (coord(1)^2) * (coord(2)^2) + coord(2)^4)) - pointActualY == 0;
         
         nonlinearCompensation.Equations.equation_1 = equation_1;
         nonlinearCompensation.Equations.equation_2 = equation_2;
         
         % solve for each pair of coordinates
         
-        x0.coord = [coordActualX coordActualY]; % search close to actual values
+        x0.coord = [pointActualX pointActualY]; % search close to actual values
         
         [sol, ~, ~] = solve(nonlinearCompensation , x0);
         
         % store new compensated coordinates
         % use same variable, values will be now reused to estimate P again
-        imageData(ii).XYmm(jj, 1) = sol.coord(1);
-        imageData(ii).XYmm(jj, 2) = sol.coord(2);
+        imageData(ii).XYpixels(jj, 1) = alpha_u * sol.coord(1) + u_0;
+        imageData(ii).XYpixels(jj, 2) = alpha_v * sol.coord(2) + v_0;
         
         % TODO compute new P with compensated coordinates
         % iterate, using new coordinates with matrix P
