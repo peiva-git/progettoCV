@@ -205,8 +205,8 @@ end
 u_0 = K(1,3);
 v_0 = K(2,3);
 alpha_u = K(1,1);
-skew_angle = atan(alpha_u/K(1,2)); % cotan = 1/tan
-alpha_v = K(2,2)*sin(skew_angle);
+skew_angle = acot(K(1,2)/alpha_u); % cotan = 1/tan, inverse is acotan
+alpha_v = K(2,2) * sin(skew_angle);
 
 iterationsCounter = 40000;
 
@@ -244,54 +244,46 @@ k_2 = k(2, 1);
 
 for jj = 1:length(imageData(imageIndex).XYmm)
 
-    B = [];
-    c = [];
+    clear nonLinearCompensation coord x0 % clear from previous step
+    nonlinearCompensation = eqnproblem; % optimization toolbox
+    coord = optimvar('coord', 2);
     
-    coorPointX = imageData(imageIndex).XYmm(jj, 1); % x^ actual coordinates
-    coorPointY = imageData(imageIndex).XYmm(jj, 2); % y^ actual coordinates
+    coordActualX = imageData(imageIndex).XYmm(jj, 1); % x^ actual coordinates
+    coordActualY = imageData(imageIndex).XYmm(jj, 2); % y^ actual coordinates
     
-    % TODO solve nonlinear system with matlab
+    nonlinearCompensation.(strcat('eq', string(jj), '_x')) = coord(1) * (1 + k_1 * (coord(1)^2 + coord(2)^2) + k_2 * (coord(1)^4 + 2 * (coord(1)^2) * (coord(2)^2) + coord(2)^4)) - coordActulX == 0;
+    nonlinearCompensation.(strcat('eq', string(jj), '_y')) = coord(2) * (1 + k_1 * (coord(1)^2 + coord(2)^2) + k_2 * (coord(1)^4 + 2 * (coord(1)^2) * (coord(2)^2) + coord(2)^4)) - coordActualY == 0;
+    
+    % solve for each pair of coordinates
+    
+    x0.coord = [coordActaulX coordActualY]; % search close to actual values
+    
+   [sol, ~, ~] = solve(problem , x0);
+   
+   % store new compensated coordinates
+   imageData(imageIndex).XYmm_new(jj, 1) = sol.coord(1);
+   imageData(imageIndex).XYmm_new(jj, 2) = sol.coord(2);
+    
+    % TODO compute new P with compensated coordinates
     % iterate, using new coordinates with matrix P
 end
+%%
+% trying problem - based approach to solve nonlinear system of equations
+% using optimization toolbox
 
-% added to previous section
-%{
-    while totalReprojectionError > 0.1
-    
-        A = [];
-        b = [];
+x = optimvar('x', 2);
+first_eq = x(1)^2 + x(2)^2 == 1;
+second_eq = x(1) + x(2) == 0;
+x0.x = [1 -1]; % must be sufficiently close to find solution
+problem = eqnproblem;
 
-        pointSpace = [imageData(imageIndex).XYmm(jj, 1);...
-            imageData(imageIndex).XYmm(jj, 2); 0; 1];
-        
-        imagePointX = imageData(imageIndex).XYpixels(jj, 1); %u ideal projections
-        imagePointY = imageData(imageIndex).XYpixels(jj, 2); %v ideal projections
+problem.Equations.first_eq = first_eq;
+problem.Equations.second_eq = second_eq;
+show(problem);
 
-        rd_2 = ((imagePointX-u_0)/alpha_u)^2 + ((imagePointY-v_0)/alpha_v)^2;
+[sol, fvak, exitflag] = solve(problem , x0); % correct solution found
 
-        A = [(imagePointX-u_0)*rd_2 (imagePointX-u_0)*rd_2*rd_2;...
-            (imagePointY-v_0)*rd_2 (imagePointY-v_0)*rd_2*rd_2];
 
-        b = [projPointX-imagePointX ; projPointY - imagePointY];
-
-        k = (A'*A)\A'*b;
-
-        x = (imagePointX-u_0)/alpha_u;
-        y = (imagePointY-v_0)/alpha_v;
-
-        %undistorted coordinate
-        x_u = x*(1+k(1)*(x^2+y^2)+k(2)*(x^4+2*(x^2)*(y^2)+y^4));
-        y_u = y*(1+k(1)*(x^2+y^2)+k(2)*(x^4+2*(x^2)*(y^2)+y^4));
-        
-        projPointX = x_u; 
-        projPointY = y_u; 
-        
-        ReprojectionError = (projPointX - imagePointX)^2 + (projPointY - imagePointY)^2; 
-       
-        
-    
-    end
-%}
  
 
 
