@@ -420,6 +420,45 @@ while iterationsCounter < maxIterations + 1
     iterationsCounter = iterationsCounter + 1;
 end
 %%
+% superimpose cylinder
+
+r = 120; % in mm
+h = 60; % in mm
+x = 150; % in mm
+y = 150; % in mm
+
+[X, Y, Z] = cylinder(r);
+
+X = X + x;
+Y = Y + y;
+Z = Z * h;
+
+%surf(X, Y, Z);
+
+figure
+imshow(imageData(imageIndex).image, 'InitialMagnification', 200)
+hold on
+
+P_plot = imageData(imageIndex).P;
+
+for kk=1:length(X)
+    pointSpace = [X(2, kk); Y(2, kk); Z(2, kk); 1];
+    projPointX = (P_plot(1, :) * pointSpace) / (P_plot(3, :) * pointSpace);
+    projPointY = (P_plot(2, :) * pointSpace) / (P_plot(3, :) * pointSpace);
+    
+    plot(projPointX, projPointY, 'g+')
+end
+
+
+for kk=1:length(X)
+    pointSpace = [X(1, kk); Y(1, kk); Z(1, kk); 1];
+    projPointX = (P_plot(1, :) * pointSpace) / (P_plot(3, :) * pointSpace);
+    projPointY = (P_plot(2, :) * pointSpace) / (P_plot(3, :) * pointSpace);
+    
+    plot(projPointX, projPointY, 'r+')
+end 
+
+%%
 % trying problem - based approach to solve nonlinear system of equations
 % using optimization toolbox
 
