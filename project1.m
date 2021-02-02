@@ -155,6 +155,8 @@ for ii=1:imagesNumber
     imageData(ii).R = R;
     imageData(ii).R_orthogonal = R_orthogonal;
     imageData(ii).t = lambda * K \ currentH(:, 3);
+    imageData(ii).K = K;
+    imageData(ii).P = K * [imageData(ii).R, imageData(ii).t];
 end
 %%
 % POINT 2
@@ -165,7 +167,7 @@ end
 imageIndex = 1;
 
 % matrix P not working if using R_orthogonal
-P = K * [imageData(imageIndex).R, imageData(imageIndex).t];
+P = imageData(imageIndex).P;
 
 figure
 imshow(imageData(imageIndex).image, 'InitialMagnification', 200)
@@ -202,109 +204,220 @@ end
 % We have already P = K [R | t]
 % get intrinsic parameters and rd
 
-u_0 = K(1,3);
-v_0 = K(2,3);
-alpha_u = K(1,1);
-skew_angle = acot(K(1,2)/alpha_u); % cotan = 1/tan, inverse is acotan
-alpha_v = K(2,2) * sin(skew_angle);
-
-iterationsCounter = 40000;
+iterationsCounter = 1;
+maxIterations = 10;
+totalErrors = zeros(maxIterations, 1);
+k_vectors = zeros(imagesNumber * maxIterations, 2);
 
 % first build linear system to estimate k using all correspondences in
 % the image, for each image (need all images to estimate P again)
 
-for ii=1:imagesNumber
+while iterationsCounter < maxIterations + 1
     
-    for jj=1:length(imageData(ii).XYmm)
+% first estimate P
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
+    % copied code
+    
+    % estimate homography
+    
+    for ii=1:imagesNumber
+        XYpixels = imageData(ii).XYpixels;
+        XYmm = imageData(ii).XYmm;
         
-        A = [];
-        b = [];
+        A = zeros(2 * length(XYpixels), 9);
+        %    b = [];
         
-        pointSpace = [imageData(ii).XYmm(jj, 1);...
-            imageData(ii).XYmm(jj, 2); 0; 1];
+        for jj=1:length(XYpixels)
+            
+            Xpixels = XYpixels(jj, 1);
+            Ypixels = XYpixels(jj, 2);
+            Xmm = XYmm(jj, 1);
+            Ymm = XYmm(jj, 2);
+            
+            m = [Xmm; Ymm; 1];
+            zero = [0; 0; 0];
+            A(2 * jj - 1, :) = [m' zero' -Xpixels*m']; % odd rows
+            A(2 * jj, :) = [zero' m' -Ypixels*m']; % even rows
+            %        b = [b; 0; 0];
+            
+        end
         
-        projPointX = (P(1, :) * pointSpace) / (P(3, :) * pointSpace); %u^ actual projections
-        projPointY = (P(2, :) * pointSpace) / (P(3, :) * pointSpace); %v^ actual projections
+        [~, ~, V] = svd(A);
+        h = V(:, end);
         
-        imagePointX = imageData(ii).XYpixels(jj, 1); %u ideal projections
-        imagePointY = imageData(ii).XYpixels(jj, 2); %v ideal projections
-        
-        rd_2 = ((imagePointX - u_0)/alpha_u)^2 + ((imagePointY - v_0)/alpha_v)^2;
-        
-        A = [A; (imagePointX - u_0) * rd_2, (imagePointX - u_0) * rd_2 * rd_2;...
-            (imagePointY - v_0) * rd_2, (imagePointY - v_0) * rd_2 * rd_2];
-        
-        b = [b; projPointX - imagePointX; projPointY - imagePointY];
+        imageData(ii).H = reshape(h, [3 3])';       
     end
     
-    % now estimate k using least squares
-    k = (A'*A)\A' * b; % k is 2x1 vector
-    imageData(ii).k_1 = k(1, 1);
-    imageData(ii).k_2 = k(2, 1);
-    k_1 = imageData.k_1;
-    k_2 = imageData.k_2;
+    % now find K, R and t (intrinsic and extrinsic parameters)
     
-    % now build nonlinear system to compensate distortion
+    V = zeros(2 * imagesNumber, 6);
     
-    for jj=1:length(imageData(ii).XYmm)
+    for ii=1:imagesNumber
+        currentH = imageData(ii).H;
         
-        clear nonLinearCompensation coord x0 % clear from previous step
-        nonlinearCompensation = eqnproblem; % optimization toolbox
-        coord = optimvar('coord', 2);
-        
-        pointSpace = [imageData(ii).XYmm(jj, 1);...
-            imageData(ii).XYmm(jj, 2); 0; 1];
-        
-        projPointX = (P(1, :) * pointSpace) / (P(3, :) * pointSpace); % u^
-        projPointY = (P(2, :) * pointSpace) / (P(3, :) * pointSpace); % u^
-        
-        pointActualX = (projPointX - u_0) / alpha_u; % x^ actual coordinates
-        pointActualY = (projPointY - v_0) / alpha_v; % y^ actual coordinates
-        
-        equation_1 = coord(1) * (1 + k_1 * (coord(1)^2 + coord(2)^2) + k_2 * (coord(1)^4 + 2 * (coord(1)^2) * (coord(2)^2) + coord(2)^4)) - pointActualX == 0;
-        equation_2 = coord(2) * (1 + k_1 * (coord(1)^2 + coord(2)^2) + k_2 * (coord(1)^4 + 2 * (coord(1)^2) * (coord(2)^2) + coord(2)^4)) - pointActualY == 0;
-        
-        nonlinearCompensation.Equations.equation_1 = equation_1;
-        nonlinearCompensation.Equations.equation_2 = equation_2;
-        
-        % solve for each pair of coordinates
-        
-        x0.coord = [pointActualX pointActualY]; % search close to actual values
-        
-        [sol, ~, ~] = solve(nonlinearCompensation , x0);
-        
-        % store new compensated coordinates
-        % use same variable, values will be now reused to estimate P again
-        imageData(ii).XYpixels(jj, 1) = alpha_u * sol.coord(1) + u_0;
-        imageData(ii).XYpixels(jj, 2) = alpha_v * sol.coord(2) + v_0;
-        
-        % TODO compute new P with compensated coordinates
-        % iterate, using new coordinates with matrix P
-    end 
-end
-
-% estimate P again, now using compensated XYmm coordinates
-zhang_estimation(imageData, imagesNumber);
-
-%%
-% test reprojection error
-
-totalReprojectionError = 0;
-
-for jj=1:length(imageData(imageIndex).XYmm)
+        V(2 * ii - 1, :) = compute_v_ij(1, 2, currentH)'; % odd rows
+        V(2 * ii, :) = (compute_v_ij(1, 1,  currentH) - compute_v_ij(2, 2, currentH))'; % even rows
+    end
     
-    pointSpace = [imageData(imageIndex).XYmm(jj, 1);...
-        imageData(imageIndex).XYmm(jj, 2); 0; 1];
-    projPointX = (P(1, :) * pointSpace) / (P(3, :) * pointSpace);
-    projPointY = (P(2, :) * pointSpace) / (P(3, :) * pointSpace);
-    imagePointX = imageData(imageIndex).XYpixels(jj, 1);
-    imagePointY = imageData(imageIndex).XYpixels(jj, 2);
-
-    plot(imagePointX, imagePointY, 'r+')
-    plot(projPointX, projPointY, 'g+')
+    [~, ~, S] = svd(V);
+    b = S(:, end);
     
-    totalReprojectionError = totalReprojectionError + (projPointX - imagePointX)^2 +...
-        (projPointY - imagePointY)^2;
+    % need to divide to have positive definite B? (defined up to scale factor)
+    b = b/b(6);
+    
+    % now to build B matrix (L2-p73)
+    
+    B = [b(1) b(2) b(4); b(2) b(3) b(5); b(4) b(5) b(6)];
+    L = chol(B, 'lower');
+    K = inv(L');
+    
+    % set proper scale
+    K = K/K(3, 3);
+    
+    % extrinsic parameters are computed for each image (L2-p73)
+    for ii=1:imagesNumber
+        currentH = imageData(ii).H;
+        lambda = 1/norm(K \ currentH(:, 1)); % using of inv discuraged by matlab
+        
+        r_1 = lambda * K \ currentH(:, 1);
+        r_2 = lambda * K \ currentH(:, 2);
+        R = [r_1, r_2, cross(r_1, r_2)];
+        
+        % find closest orthogonal matrix in Frobenius norm
+%        [U, ~, V] = svd(R);
+%        R_orthogonal = U * V';
+        
+        imageData(ii).R = R;
+%        imageData(ii).R_orthogonal = R_orthogonal;
+        imageData(ii).t = lambda * K \ currentH(:, 3);
+        imageData(ii).K = K; % same for all images
+        
+        % finally compute matrix P
+        imageData(ii).P = K * [imageData(ii).R, imageData(ii).t];
+    end
+    
+    
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+
+    for ii=1:imagesNumber
+        
+        u_0 = imageData(ii).K(1,3);
+        v_0 = imageData(ii).K(2,3);
+        alpha_u = imageData(ii).K(1,1);
+        skew_angle = acot(imageData(ii).K(1,2)/alpha_u); % cotan = 1/tan, inverse is acotan
+        alpha_v = imageData(ii).K(2,2) * sin(skew_angle);
+        
+        P = imageData(ii).P;
+        
+        A = zeros(2 * length(imageData(ii).XYmm), 2);
+        b = zeros(2 * length(imageData(ii).XYmm), 1);
+        
+        for jj=1:length(imageData(ii).XYmm)
+            
+            pointSpace = [imageData(ii).XYmm(jj, 1);...
+                imageData(ii).XYmm(jj, 2); 0; 1];
+            
+            projPointX = (P(1, :) * pointSpace) / (P(3, :) * pointSpace); %u actual projections
+            projPointY = (P(2, :) * pointSpace) / (P(3, :) * pointSpace); %v actual projections
+            
+            imagePointX = imageData(ii).XYpixels(jj, 1); %u^ distorted projections
+            imagePointY = imageData(ii).XYpixels(jj, 2); %v^ distorted projections
+            
+            rd_2 = ((projPointX - u_0)/alpha_u)^2 + ((projPointY - v_0)/alpha_v)^2;
+            
+            A(2 * jj - 1, 1) = (projPointX - u_0) * rd_2; % odd rows
+            A(2 * jj - 1, 2) = (projPointX - u_0) * rd_2 * rd_2; % odd rows
+            A(2 * jj, 1) = (projPointY - v_0) * rd_2; % even rows
+            A(2 * jj, 2) = (projPointY - v_0) * rd_2 * rd_2; % even rows
+            
+            b(2 * jj - 1, 1) = imagePointX - projPointX; % odd rows
+            b(2 * jj, 1) = imagePointY - projPointY; % even rows
+        end
+        
+        % now estimate k using least squares
+        k = (A'*A)\A' * b; % k is 2x1 vector
+        k_1 = k(1, 1);
+        k_2 = k(2, 1);
+        
+        k_vectors(ii + (iterationsCounter - 1) * imagesNumber, :) = k;
+        
+        % now build nonlinear system to compensate distortion
+        
+        for jj=1:length(imageData(ii).XYmm)
+            
+            clear nonLinearCompensation coord x0 % clear from previous step
+            nonlinearCompensation = eqnproblem; % optimization toolbox
+            coord = optimvar('coord', 2);
+            
+            pointSpace = [imageData(ii).XYmm(jj, 1);...
+                imageData(ii).XYmm(jj, 2); 0; 1];
+            
+            projPointX = (P(1, :) * pointSpace) / (P(3, :) * pointSpace); %u actual projections
+            projPointY = (P(2, :) * pointSpace) / (P(3, :) * pointSpace); %v actual projections
+            
+            pointProjX = (projPointX - u_0) / alpha_u; % x actual coordinates
+            pointProjY = (projPointY - v_0) / alpha_v; % y actual coordinates
+            
+            imagePointX = imageData(ii).XYpixels(jj, 1); % u^
+            imagePointY = imageData(ii).XYpixels(jj, 2); % v^
+            
+            pointDistortedX = (imagePointX - u_0) / alpha_u; % x^ distorted coordinates
+            pointDistortedY = (imagePointY - v_0) / alpha_v; % y^ distorted coordinates
+            
+            equation_1 = coord(1) * (1 + k_1 * (coord(1)^2 + coord(2)^2) + k_2 * (coord(1)^4 + 2 * (coord(1)^2) * (coord(2)^2) + coord(2)^4)) - pointDistortedX == 0;
+            equation_2 = coord(2) * (1 + k_1 * (coord(1)^2 + coord(2)^2) + k_2 * (coord(1)^4 + 2 * (coord(1)^2) * (coord(2)^2) + coord(2)^4)) - pointDistortedY == 0;
+            
+            nonlinearCompensation.Equations.equation_1 = equation_1;
+            nonlinearCompensation.Equations.equation_2 = equation_2;
+            
+            % solve for each pair of coordinates
+            
+            x0.coord = [pointProjX pointProjY]; % search close to actual values
+            
+            [sol, ~, ~] = solve(nonlinearCompensation , x0);
+            
+            % store new compensated coordinates
+            % use same variable, values will be now reused to estimate P again
+            imageData(ii).XYpixels(jj, 1) = alpha_u * sol.coord(1) + u_0;
+            imageData(ii).XYpixels(jj, 2) = alpha_v * sol.coord(2) + v_0;
+            
+            % TODO compute new P with compensated coordinates
+            % iterate, using new coordinates with matrix P
+        end
+    end
+    
+    % check error only on one image
+    
+    totalReprojectionError = 0;
+    
+    figure
+    imshow(imageData(imageIndex).image, 'InitialMagnification', 200)
+    hold on
+    
+    % get P matrix of chosen image
+    P_plot = imageData(imageIndex).P;
+    
+    for jj=1:length(imageData(imageIndex).XYmm)
+    
+        pointSpace = [imageData(imageIndex).XYmm(jj, 1);...
+            imageData(imageIndex).XYmm(jj, 2); 0; 1];
+        projPointX = (P_plot(1, :) * pointSpace) / (P_plot(3, :) * pointSpace);
+        projPointY = (P_plot(2, :) * pointSpace) / (P_plot(3, :) * pointSpace);
+        imagePointX = imageData(imageIndex).XYpixels(jj, 1);
+        imagePointY = imageData(imageIndex).XYpixels(jj, 2);
+        
+        plot(imagePointX, imagePointY, 'r+')
+        plot(projPointX, projPointY, 'g+')
+
+        totalReprojectionError = totalReprojectionError +...
+            (projPointX - imagePointX)^2 +...
+            (projPointY - imagePointY)^2;
+    end
+    
+    totalErrors(iterationsCounter, 1) = totalReprojectionError;
+    
+    iterationsCounter = iterationsCounter + 1;
 end
 %%
 % trying problem - based approach to solve nonlinear system of equations

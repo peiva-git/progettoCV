@@ -1,14 +1,35 @@
-function zhang_estimation(imageData, imagesNumber)
+function new_imageData = zhang_estimation(imageData, imagesNumber)
     
     % code copied from project1
     % XYmm and XYpixels must be previously evaluated
+    
+    % preallocate new struct
+    
+    new_imageData = struct('image', cell(1, imagesNumber), 'XYpixels', cell(1, imagesNumber),...
+        'XYmm', cell(1, imagesNumber), 'H', cell(1, imagesNumber),...
+        'R', cell(1, imagesNumber), 't', cell(1, imagesNumber),...
+        'K', cell(1, imagesNumber), 'P', cell(1, imagesNumber));
+    
+    for ii=1:imagesNumber
+        new_imageData(ii).image = zeros(480, 640);
+        new_imageData(ii).XYpixels = zeros(156, 2);
+        new_imageData(ii).XYmm = zeros(156, 2);
+        new_imageData(ii).H = zeros(3, 3);
+        new_imageData(ii).R = zeros(3, 3);
+        new_imageData(ii).t = zeros(3, 1);
+        new_imageData(ii).K = zeros(3, 3);
+        new_imageData(ii).P = zeros(3, 4); 
+    end
     
     % first compute homography H
     
     for ii=1:imagesNumber
         XYpixels = imageData(ii).XYpixels;
         XYmm = imageData(ii).XYmm;
-        A = [];
+        new_imageData(ii).XYpixels = XYpixels;
+        new_imageData(ii).XYmm = XYmm;
+        
+        A = zeros(2 * length(XYpixels), 9);
         %    b = [];
 
         for jj=1:length(XYpixels)
@@ -20,7 +41,8 @@ function zhang_estimation(imageData, imagesNumber)
 
             m = [Xmm; Ymm; 1];
             zero = [0; 0; 0];
-            A = [A; m' zero' -Xpixels*m'; zero' m' -Ypixels*m'];
+            A(jj, :) = [m' zero' -Xpixels*m'];
+            A(jj + 1, :) = [zero' m' -Ypixels*m'];
             %        b = [b; 0; 0];
 
         end
@@ -28,19 +50,19 @@ function zhang_estimation(imageData, imagesNumber)
         [~, ~, V] = svd(A);
         h = V(:, end);
 
-        imageData(ii).H = reshape(h, [3 3])';
+        new_imageData(ii).H = reshape(h, [3 3])';
 
     end
     
     % now find K, R and t (intrinsic and extrinsic parameters)
     
-    V = [];
+    V = zeros(2 * imagesNumber, 6);
     
     for ii=1:imagesNumber
         currentH = imageData(ii).H;
         
-        V = [V; compute_v_ij(1, 2, currentH)';...
-            (compute_v_ij(1, 1,  currentH) - compute_v_ij(2, 2, currentH))'];
+        V(ii, :) = compute_v_ij(1, 2, currentH)';
+        V(ii + 1, :) = (compute_v_ij(1, 1,  currentH) - compute_v_ij(2, 2, currentH))';
     end
     
     [~, ~, S] = svd(V);
@@ -71,13 +93,12 @@ function zhang_estimation(imageData, imagesNumber)
         [U, ~, V] = svd(R);
         R_orthogonal = U * V';
         
-        imageData(ii).R = R;
-        imageData(ii).R_orthogonal = R_orthogonal;
-        imageData(ii).t = lambda * K \ currentH(:, 3);
+        new_imageData(ii).R = R;
+        new_imageData(ii).R_orthogonal = R_orthogonal;
+        new_imageData(ii).t = lambda * K \ currentH(:, 3);
+        new_imageData(ii).K = K; % same for all images
         
         % finally compute matrix P
-        imageData(ii).P = K * [imageData(ii).R, imageData(ii).t];
+        new_imageData(ii).P = K * [new_imageData(ii).R, new_imageData(ii).t];
     end
-
-
 end
