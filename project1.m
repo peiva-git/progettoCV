@@ -1,6 +1,11 @@
 imagesNumber = 20;
 squareSize = 30; % 30 mm square size
 
+global pointDistortedX;
+global pointDistortedY;
+global k_1; % used inside function
+global k_2;
+
 %%
 % load all checkerboard images
 
@@ -25,6 +30,7 @@ for ii=1:imagesNumber
     
     [imagePoints, boardSize] = detectCheckerboardPoints(imageData(ii).image);
     imageData(ii).XYpixels = imagePoints;
+    imageData(ii).checkerboardPixels = imagePoints;
     imageData(ii).boardSize = boardSize;
 end
 
@@ -76,7 +82,7 @@ for ii=1:imagesNumber
         
     end
     
-    [U, S, V] = svd(A);
+    [~, ~, V] = svd(A);
     h = V(:, end);
     
     imageData(ii).H = reshape(h, [3 3])';
@@ -124,7 +130,7 @@ for ii=1:imagesNumber
         (compute_v_ij(1, 1,  currentH) - compute_v_ij(2, 2, currentH))']; 
 end
 
-[U, D, S] = svd(V);
+[~, ~, S] = svd(V);
 b = S(:, end);
 
 % need to divide to have positive definite B? (defined up to scale factor)
@@ -144,17 +150,17 @@ for ii=1:imagesNumber
     currentH = imageData(ii).H;
     lambda = 1/norm(K \ currentH(:, 1)); % using of inv discuraged by matlab
     
-    r_1 = lambda * K \ currentH(:, 1);
-    r_2 = lambda * K \ currentH(:, 2);
+    r_1 = lambda * (K \ currentH(:, 1)); % WRONG R RESULT WITHOUT EXTERNAL PARENTHESIS
+    r_2 = lambda * (K \ currentH(:, 2));
     R = [r_1, r_2, cross(r_1, r_2)];
     
     % find closest orthogonal matrix in Frobenius norm
-    [U, S, V] = svd(R);
+    [U, ~, V] = svd(R);
     R_orthogonal = U * V';
     
     imageData(ii).R = R;
     imageData(ii).R_orthogonal = R_orthogonal;
-    imageData(ii).t = lambda * K \ currentH(:, 3);
+    imageData(ii).t = lambda * (K \ currentH(:, 3));
     imageData(ii).K = K;
     imageData(ii).P = K * [imageData(ii).R, imageData(ii).t];
 end
@@ -166,7 +172,6 @@ end
 
 imageIndex = 1;
 
-% matrix P not working if using R_orthogonal
 P = imageData(imageIndex).P;
 
 figure
@@ -179,6 +184,7 @@ for jj=1:length(imageData(imageIndex).XYmm)
     
     pointSpace = [imageData(imageIndex).XYmm(jj, 1);...
         imageData(imageIndex).XYmm(jj, 2); 0; 1];
+    projection = P * pointSpace;
     projPointX = (P(1, :) * pointSpace) / (P(3, :) * pointSpace);
     projPointY = (P(2, :) * pointSpace) / (P(3, :) * pointSpace);
     imagePointX = imageData(imageIndex).XYpixels(jj, 1);
@@ -205,7 +211,7 @@ end
 % get intrinsic parameters and rd
 
 iterationsCounter = 1;
-maxIterations = 10;
+maxIterations = 100;
 totalErrors = zeros(maxIterations, 1);
 k_vectors = zeros(imagesNumber * maxIterations, 2);
 
@@ -280,17 +286,17 @@ while iterationsCounter < maxIterations + 1
         currentH = imageData(ii).H;
         lambda = 1/norm(K \ currentH(:, 1)); % using of inv discuraged by matlab
         
-        r_1 = lambda * K \ currentH(:, 1);
-        r_2 = lambda * K \ currentH(:, 2);
+        r_1 = lambda * (K \ currentH(:, 1));
+        r_2 = lambda * (K \ currentH(:, 2));
         R = [r_1, r_2, cross(r_1, r_2)];
         
         % find closest orthogonal matrix in Frobenius norm
-%        [U, ~, V] = svd(R);
-%        R_orthogonal = U * V';
+        [U, ~, V] = svd(R);
+        R_orthogonal = U * V';
         
         imageData(ii).R = R;
-%        imageData(ii).R_orthogonal = R_orthogonal;
-        imageData(ii).t = lambda * K \ currentH(:, 3);
+        imageData(ii).R_orthogonal = R_orthogonal;
+        imageData(ii).t = lambda * (K \ currentH(:, 3));
         imageData(ii).K = K; % same for all images
         
         % finally compute matrix P
@@ -347,40 +353,57 @@ while iterationsCounter < maxIterations + 1
         for jj=1:length(imageData(ii).XYmm)
             
             clear nonLinearCompensation coord x0 % clear from previous step
-            nonlinearCompensation = eqnproblem; % optimization toolbox
-            coord = optimvar('coord', 2);
+            %nonlinearCompensation = eqnproblem; % optimization toolbox
+            %coord = optimvar('coord', 2);
             
-            pointSpace = [imageData(ii).XYmm(jj, 1);...
-                imageData(ii).XYmm(jj, 2); 0; 1];
+            %pointSpace = [imageData(ii).XYmm(jj, 1);...
+            %    imageData(ii).XYmm(jj, 2); 0; 1];
             
-            projPointX = (P(1, :) * pointSpace) / (P(3, :) * pointSpace); %u actual projections
-            projPointY = (P(2, :) * pointSpace) / (P(3, :) * pointSpace); %v actual projections
+            %projPointX = (P(1, :) * pointSpace) / (P(3, :) * pointSpace); %u actual projections
+            %projPointY = (P(2, :) * pointSpace) / (P(3, :) * pointSpace); %v actual projections
             
-            pointProjX = (projPointX - u_0) / alpha_u; % x actual coordinates
-            pointProjY = (projPointY - v_0) / alpha_v; % y actual coordinates
+            %pointProjX = (projPointX - u_0) / alpha_u; % x actual coordinates
+            %pointProjY = (projPointY - v_0) / alpha_v; % y actual coordinates
             
             imagePointX = imageData(ii).XYpixels(jj, 1); % u^
             imagePointY = imageData(ii).XYpixels(jj, 2); % v^
             
-            pointDistortedX = (imagePointX - u_0) / alpha_u; % x^ distorted coordinates
+            pointDistortedX = (imagePointX - u_0) / alpha_u; % x^ distorted coordinates, used inside function (global)
             pointDistortedY = (imagePointY - v_0) / alpha_v; % y^ distorted coordinates
             
-            equation_1 = coord(1) * (1 + k_1 * (coord(1)^2 + coord(2)^2) + k_2 * (coord(1)^4 + 2 * (coord(1)^2) * (coord(2)^2) + coord(2)^4)) - pointDistortedX == 0;
-            equation_2 = coord(2) * (1 + k_1 * (coord(1)^2 + coord(2)^2) + k_2 * (coord(1)^4 + 2 * (coord(1)^2) * (coord(2)^2) + coord(2)^4)) - pointDistortedY == 0;
+            pointCheckerboardX = imageData(ii).checkerboardPixels(jj, 1); 
+            pointCheckerboardY = imageData(ii).checkerboardPixels(jj, 2);
             
-            nonlinearCompensation.Equations.equation_1 = equation_1;
-            nonlinearCompensation.Equations.equation_2 = equation_2;
+            checkNormalizedX = (pointCheckerboardX - u_0) / alpha_u; % normalized
+            checkNormalizedY = (pointCheckerboardY - v_0) / alpha_v; % normalized
+            
+            %equation_1 = coord(1) * (1 + k_1 * (coord(1)^2 + coord(2)^2) + k_2 * (coord(1)^4 + 2 * (coord(1)^2) * (coord(2)^2) + coord(2)^4)) - pointDistortedX == 0;
+            %equation_2 = coord(2) * (1 + k_1 * (coord(1)^2 + coord(2)^2) + k_2 * (coord(1)^4 + 2 * (coord(1)^2) * (coord(2)^2) + coord(2)^4)) - pointDistortedY == 0;
+            
+            %nonlinearCompensation.Equations.equation_1 = equation_1;
+            %nonlinearCompensation.Equations.equation_2 = equation_2;
             
             % solve for each pair of coordinates
             
-            x0.coord = [pointProjX pointProjY]; % search close to actual values
+            x0 = [checkNormalizedX; checkNormalizedY]; % search close to ideal values
             
-            [sol, ~, ~] = solve(nonlinearCompensation , x0);
+            % try solution with fsolve
+            opts = optimoptions(@fsolve, 'UseParallel', true, 'Jacobian', 'on');
+            [sol, ~, ~, ~, ~] = fsolve(@distortionCompensation, x0, opts); 
+            
+            %[sol, ~, ~] = solve(nonlinearCompensation , x0);
+            
+            u_sol = alpha_u * sol(1) + u_0;
+            v_sol = alpha_v * sol(2) + v_0;
+            rd_2 = ((u_sol - u_0)/alpha_u)^2 + ((v_sol - v_0)/alpha_v)^2;
+            
+            compensatedX = (u_sol - u_0) * (1 + k_1 * rd_2 + k_2 * rd_2 * rd_2) + u_0;
+            compensatedY = (v_sol - v_0) * (1 + k_1 * rd_2 + k_2 * rd_2 * rd_2) + v_0;
             
             % store new compensated coordinates
             % use same variable, values will be now reused to estimate P again
-            imageData(ii).XYpixels(jj, 1) = alpha_u * sol.coord(1) + u_0;
-            imageData(ii).XYpixels(jj, 2) = alpha_v * sol.coord(2) + v_0;
+            imageData(ii).XYpixels(jj, 1) = compensatedX; % compensate
+            imageData(ii).XYpixels(jj, 2) = compensatedY; % compensate
             
             % TODO compute new P with compensated coordinates
             % iterate, using new coordinates with matrix P
@@ -404,8 +427,8 @@ while iterationsCounter < maxIterations + 1
             imageData(imageIndex).XYmm(jj, 2); 0; 1];
         projPointX = (P_plot(1, :) * pointSpace) / (P_plot(3, :) * pointSpace);
         projPointY = (P_plot(2, :) * pointSpace) / (P_plot(3, :) * pointSpace);
-        imagePointX = imageData(imageIndex).XYpixels(jj, 1);
-        imagePointY = imageData(imageIndex).XYpixels(jj, 2);
+        imagePointX = imageData(imageIndex).checkerboardPixels(jj, 1);
+        imagePointY = imageData(imageIndex).checkerboardPixels(jj, 2);
         
         plot(imagePointX, imagePointY, 'r+')
         plot(projPointX, projPointY, 'g+')
@@ -423,7 +446,7 @@ end
 % superimpose cylinder
 
 r = 120; % in mm
-h = 60; % in mm
+h = -60; % in mm
 x = 150; % in mm
 y = 150; % in mm
 
@@ -447,21 +470,18 @@ for kk=1:length(X)
     projPointY = (P_plot(2, :) * pointSpace) / (P_plot(3, :) * pointSpace);
     
     plot(projPointX, projPointY, 'g+')
-end
-
-
-for kk=1:length(X)
+    
     pointSpace = [X(1, kk); Y(1, kk); Z(1, kk); 1];
     projPointX = (P_plot(1, :) * pointSpace) / (P_plot(3, :) * pointSpace);
     projPointY = (P_plot(2, :) * pointSpace) / (P_plot(3, :) * pointSpace);
     
     plot(projPointX, projPointY, 'r+')
-end 
-
+end
 %%
 % trying problem - based approach to solve nonlinear system of equations
 % using optimization toolbox
 
+%{
 x = optimvar('x', 2);
 first_eq = x(1)^2 + x(2)^2 == 1;
 second_eq = x(1) + x(2) == 0;
@@ -473,6 +493,31 @@ problem.Equations.second_eq = second_eq;
 show(problem);
 
 [sol, fvak, exitflag] = solve(problem , x0); % correct solution found
+%}
+
+x0 = imageData(imageIndex).checkerboardPixels(1, :);
+opts = optimoptions('fsolve', 'SpecifyObjectiveGradient', true);
+[sol, F, ~, output, J] = fsolve(@distortionCompensation, x0, opts);
+
+%[sol, ~, ~] = solve(nonlinearCompensation , x0);
+
+%%
+% solve using function
+function [F, J] = distortionCompensation(x)
+    global k_1;
+    global k_2;
+    global pointDistortedX;
+    global pointDistortedY;
+    F = zeros(2, 1);
+    F(1, 1) = x(1) * (1 + k_1 * (x(1)^2 + x(2)^2) + k_2 * (x(1)^4 + 2 * (x(1)^2) * (x(2)^2) + x(2)^4)) - pointDistortedX;
+    F(2, 1) = x(2) * (1 + k_1 * (x(1)^2 + x(2)^2) + k_2 * (x(1)^4 + 2 * (x(1)^2) * (x(2)^2) + x(2)^4)) - pointDistortedY;
+
+    J = zeros(2, 2);
+    J(1, 1) = 1 + 3 * k_1 * (x(1)^2) + k_1 * (x(2)^2) + 5 * k_2 * (x(1)^4) + 6 * k_2 * (x(1)^2) * (x(2)^2) + k_2 * (x(2)^4);
+    J(1, 2) = 2 * k_1 * x(1) * x(2) + 4 * k_2 * (x(1)^3) * x(2) + 4 * k_2 * x(1) * (x(2)^3);
+    J(2, 1) = 2 * k_1 * x(1) * x(2) + 4 * k_2 * (x(1)^3) * x(2) + 4 * k_2 * x(1) * (x(2)^3);
+    J(2, 2) = 1 + 3 * k_1 * (x(2)^2) + k_1 * (x(1)^2) + 5 * k_2 * (x(2)^4) + 6 * k_2 * (x(1)^2) * (x(2)^2) + k_2 * (x(1)^4);
+end
 
 
  
