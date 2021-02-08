@@ -476,11 +476,14 @@ while iterationsCounter < maxIterations + 1
     
     iterationsCounter = iterationsCounter + 1;
 end
+
+figure
+plot(totalErrors)
 %%
 % superimpose cylinder
 
 r = 120; % in mm
-h = -60; % in mm, working with orthogonal R?
+h = 60; % in mm, working with orthogonal R?
 x = 150; % in mm
 y = 150; % in mm
 
@@ -490,61 +493,68 @@ X = X + x;
 Y = Y + y;
 Z = Z * h;
 
-%surf(X, Y, Z);
+% images 1,2,4,6,11,12,13,15,17,18,19 working with negative Z coordinate
+% red should be below
+% criterion could be sign of det(H)? why?
 
-figure
-imshow(imageData(imageIndex).image, 'InitialMagnification', 200)
-hold on
+for ii=1:imagesNumber
+    
+    figure
+    imshow(imageData(ii).image, 'InitialMagnification', 200)
+    hold on
+    
+    imageData(ii).P = P_plot; % projection not working with orthogonal R
+    u_0 = imageData(ii).K(1,3);
+    v_0 = imageData(ii).K(2,3);
+    alpha_u = imageData(ii).K(1,1);
+    skew_angle = acot(imageData(ii).K(1,2)/alpha_u); % cotan = 1/tan, inverse is acotan
+    alpha_v = imageData(ii).K(2,2) * sin(skew_angle);
+    k_1 =  imageData(ii).k_1;
+    k_2 = imageData(ii).k_2;
+    
+    spacePoints_1 = [X(1, :); Y(1, :); Z(1, :); ones(1, length(X(1, :)))]; % 4x21 matrix
+    spacePoints_2 = [X(2, :); Y(2, :); Z(2, :); ones(1, length(X(2, :)))];
+    
+    homProjection_1 = P_plot * spacePoints_1;
+    homProjection_2 = P_plot * spacePoints_2;
+    
+    projection_1 = [homProjection_1(1, :)./homProjection_1(3, :);...
+        homProjection_1(2, :)./homProjection_1(3, :)];
+    projection_2 = [homProjection_2(1, :) ./ homProjection_2(3, :);...
+        homProjection_2(2, :) ./ homProjection_2(3, :)];
+    
+    compensatedPoints_1 = zeros(2, length(projection_1));
+    compensatedPoints_2 = zeros(2, length(projection_2));
+    
+    for kk=1:length(compensatedPoints_1)
+        rd_2 = ((projection_1(1, kk) - u_0)/alpha_u)^2 + ((projection_1(2, kk) - v_0)/alpha_v)^2;
+        compensatedPoints_1(1, kk) = (projection_1(1, kk) - u_0) * (1 + k_1 * rd_2 + k_2 * rd_2 * rd_2) + u_0;
+        compensatedPoints_1(2, kk) = (projection_1(2, kk) - v_0) * (1 + k_1 * rd_2 + k_2 * rd_2 * rd_2) + v_0;
+        compensatedPoints_2(1, kk) = (projection_2(1, kk) - u_0) * (1 + k_1 * rd_2 + k_2 * rd_2 * rd_2) + u_0;
+        compensatedPoints_2(2, kk) = (projection_2(2, kk) - v_0) * (1 + k_1 * rd_2 + k_2 * rd_2 * rd_2) + v_0;
+    end
+    
+    shapes = zeros(2, 2 * length(X(1, :)));
+    
+    
+    for kk=1:length(compensatedPoints_1)
+        shapes(1, 2 * kk - 1) = compensatedPoints_1(1, kk); % odd columns
+        shapes(1, 2 * kk) = compensatedPoints_1(2, kk); % even columns
+    end
+    
+    for kk=1:length(compensatedPoints_2)
+        shapes(2, 2 * kk - 1) = compensatedPoints_2(1, kk);
+        shapes(2, 2 * kk) = compensatedPoints_2(2, kk);
+    end
+    
+    positions = cell(2, 1);
+    positions{1, 1} = shapes(1, :);
+    positions{2, 1} = shapes(2, :);
+    
+    showShape('polygon', positions, 'Color', {'red', 'green'}, 'Opacity', 0.7)
+    pause(1)
 
-P_plot = imageData(imageIndex).P;
-u_0 = imageData(imageIndex).K(1,3);
-v_0 = imageData(imageIndex).K(2,3);
-alpha_u = imageData(imageIndex).K(1,1);
-skew_angle = acot(imageData(imageIndex).K(1,2)/alpha_u); % cotan = 1/tan, inverse is acotan
-alpha_v = imageData(imageIndex).K(2,2) * sin(skew_angle);
-k_1 =  imageData(imageIndex).k_1;
-k_2 = imageData(imageIndex).k_2;
-
-spacePoints_1 = [X(1, :); Y(1, :); Z(1, :); ones(1, length(X(1, :)))]; % 4x21 matrix
-spacePoints_2 = [X(2, :); Y(2, :); Z(2, :); ones(1, length(X(2, :)))];
-
-homProjection_1 = P_plot * spacePoints_1;
-homProjection_2 = P_plot * spacePoints_2;
-
-projection_1 = [homProjection_1(1, :)./homProjection_1(3, :);...
-    homProjection_1(2, :)./homProjection_1(3, :)];
-projection_2 = [homProjection_2(1, :) ./ homProjection_2(3, :);...
-    homProjection_2(2, :) ./ homProjection_2(3, :)];
-
-compensatedPoints_1 = zeros(2, length(projection_1));
-compensatedPoints_2 = zeros(2, length(projection_2));
-
-for kk=1:length(compensatedPoints_1)
-    rd_2 = ((projection_1(1, kk) - u_0)/alpha_u)^2 + ((projection_1(2, kk) - v_0)/alpha_v)^2;
-    compensatedPoints_1(1, kk) = (projection_1(1, kk) - u_0) * (1 + k_1 * rd_2 + k_2 * rd_2 * rd_2) + u_0;
-    compensatedPoints_1(2, kk) = (projection_1(2, kk) - v_0) * (1 + k_1 * rd_2 + k_2 * rd_2 * rd_2) + v_0;
-    compensatedPoints_2(1, kk) = (projection_2(1, kk) - u_0) * (1 + k_1 * rd_2 + k_2 * rd_2 * rd_2) + u_0;
-    compensatedPoints_2(2, kk) = (projection_2(2, kk) - v_0) * (1 + k_1 * rd_2 + k_2 * rd_2 * rd_2) + v_0;
 end
-
-shapes = zeros(2, 2 * length(X(1, :)));
-
-
-for kk=1:length(compensatedPoints_1)
-    shapes(1, 2 * kk - 1) = compensatedPoints_1(1, kk); % odd columns
-    shapes(1, 2 * kk) = compensatedPoints_1(2, kk); % even columns
-end
-
-for kk=1:length(compensatedPoints_2)
-    shapes(2, 2 * kk - 1) = compensatedPoints_2(1, kk);
-    shapes(2, 2 * kk) = compensatedPoints_2(2, kk);
-end
-
-positions = cell(2, 1);
-positions{1, 1} = shapes(1, :);
-positions{2, 1} = shapes(2, :);
-   
-showShape('polygon', positions, 'Color', {'red', 'green'}, 'Opacity', 0.7)
 %%
 % trying problem - based approach to solve nonlinear system of equations
 % using optimization toolbox
