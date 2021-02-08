@@ -1,8 +1,10 @@
 imagesNumber = 20;
 squareSize = 30; % 30 mm square size
 
-global pointDistortedX;
-global pointDistortedY;
+%global pointDistortedX;
+%global pointDistortedY;
+global checkNormalizedX;
+global checkNormalizedY;
 global k_1; % used inside function
 global k_2;
 
@@ -211,7 +213,7 @@ end
 % get intrinsic parameters and rd
 
 iterationsCounter = 1;
-maxIterations = 10;
+maxIterations = 50;
 totalErrors = zeros(maxIterations, 1);
 k_vectors = zeros(imagesNumber * maxIterations, 2);
 
@@ -327,8 +329,11 @@ while iterationsCounter < maxIterations + 1
             projPointX = (P(1, :) * pointSpace) / (P(3, :) * pointSpace); %u actual projections
             projPointY = (P(2, :) * pointSpace) / (P(3, :) * pointSpace); %v actual projections
             
-            imagePointX = imageData(ii).XYpixels(jj, 1); %u^ distorted projections
-            imagePointY = imageData(ii).XYpixels(jj, 2); %v^ distorted projections
+            %imagePointX = imageData(ii).XYpixels(jj, 1); %u^ distorted projections
+            %imagePointY = imageData(ii).XYpixels(jj, 2); %v^ distorted projections
+            
+            pointCheckerboardX = imageData(ii).checkerboardPixels(jj, 1); % u^ effective distorted projections
+            pointCheckerboardY = imageData(ii).checkerboardPixels(jj, 2); % v^ effective distorted projections
             
             rd_2 = ((projPointX - u_0)/alpha_u)^2 + ((projPointY - v_0)/alpha_v)^2;
             
@@ -337,14 +342,16 @@ while iterationsCounter < maxIterations + 1
             A(2 * jj, 1) = (projPointY - v_0) * rd_2; % even rows
             A(2 * jj, 2) = (projPointY - v_0) * rd_2 * rd_2; % even rows
             
-            b(2 * jj - 1, 1) = imagePointX - projPointX; % odd rows
-            b(2 * jj, 1) = imagePointY - projPointY; % even rows
+            b(2 * jj - 1, 1) = pointCheckerboardX - projPointX; % odd rows
+            b(2 * jj, 1) = pointCheckerboardY - projPointY; % even rows
         end
         
         % now estimate k using least squares
         k = (A'*A)\A' * b; % k is 2x1 vector
         k_1 = k(1, 1);
         k_2 = k(2, 1);
+        imageData(ii).k_1 = k_1;
+        imageData(ii).k_2 = k_2;
         
         k_vectors(ii + (iterationsCounter - 1) * imagesNumber, :) = k;
         
@@ -365,16 +372,16 @@ while iterationsCounter < maxIterations + 1
             %pointProjX = (projPointX - u_0) / alpha_u; % x actual coordinates
             %pointProjY = (projPointY - v_0) / alpha_v; % y actual coordinates
             
-            imagePointX = imageData(ii).XYpixels(jj, 1); % u^
-            imagePointY = imageData(ii).XYpixels(jj, 2); % v^
+            %imagePointX = imageData(ii).XYpixels(jj, 1); % u^
+            %imagePointY = imageData(ii).XYpixels(jj, 2); % v^
             
-            pointDistortedX = (imagePointX - u_0) / alpha_u; % x^ distorted coordinates, used inside function (global)
-            pointDistortedY = (imagePointY - v_0) / alpha_v; % y^ distorted coordinates
+            %pointDistortedX = (imagePointX - u_0) / alpha_u; % x^ distorted coordinates, used inside function (global)
+            %pointDistortedY = (imagePointY - v_0) / alpha_v; % y^ distorted coordinates
             
-            pointCheckerboardX = imageData(ii).checkerboardPixels(jj, 1); 
-            pointCheckerboardY = imageData(ii).checkerboardPixels(jj, 2);
+            pointCheckerboardX = imageData(ii).checkerboardPixels(jj, 1); % u^ effective distorted coordinates
+            pointCheckerboardY = imageData(ii).checkerboardPixels(jj, 2); % v^ effective distorted coordinates
             
-            checkNormalizedX = (pointCheckerboardX - u_0) / alpha_u; % normalized
+            checkNormalizedX = (pointCheckerboardX - u_0) / alpha_u; % normalized, used inside function
             checkNormalizedY = (pointCheckerboardY - v_0) / alpha_v; % normalized
             
             %equation_1 = coord(1) * (1 + k_1 * (coord(1)^2 + coord(2)^2) + k_2 * (coord(1)^4 + 2 * (coord(1)^2) * (coord(2)^2) + coord(2)^4)) - pointDistortedX == 0;
@@ -397,13 +404,13 @@ while iterationsCounter < maxIterations + 1
             v_sol = alpha_v * sol(2) + v_0;
             rd_2 = ((u_sol - u_0)/alpha_u)^2 + ((v_sol - v_0)/alpha_v)^2;
             
-            compensatedX = (u_sol - u_0) * (1 + k_1 * rd_2 + k_2 * rd_2 * rd_2) + u_0;
-            compensatedY = (v_sol - v_0) * (1 + k_1 * rd_2 + k_2 * rd_2 * rd_2) + v_0;
+            %compensatedX = (u_sol - u_0) * (1 + k_1 * rd_2 + k_2 * rd_2 * rd_2) + u_0;
+            %compensatedY = (v_sol - v_0) * (1 + k_1 * rd_2 + k_2 * rd_2 * rd_2) + v_0;
             
             % store new compensated coordinates
             % use same variable, values will be now reused to estimate P again
-            imageData(ii).XYpixels(jj, 1) = compensatedX; % compensate
-            imageData(ii).XYpixels(jj, 2) = compensatedY; % compensate
+            imageData(ii).XYpixels(jj, 1) = u_sol;
+            imageData(ii).XYpixels(jj, 2) = v_sol; 
             
             % iterate, using new coordinates with matrix P
         end
@@ -413,12 +420,26 @@ while iterationsCounter < maxIterations + 1
     
     totalReprojectionError = 0;
     
-    figure
-    imshow(imageData(imageIndex).image, 'InitialMagnification', 200)
-    hold on
-    
-    % get P matrix of chosen image
+    u_0 = imageData(imageIndex).K(1,3);
+    v_0 = imageData(imageIndex).K(2,3);
+    alpha_u = imageData(imageIndex).K(1,1);
+    skew_angle = acot(imageData(imageIndex).K(1,2)/alpha_u); % cotan = 1/tan, inverse is acotan
+    alpha_v = imageData(imageIndex).K(2,2) * sin(skew_angle);
+    k_1 =  imageData(imageIndex).k_1;
+    k_2 = imageData(imageIndex).k_2;
     P_plot = imageData(imageIndex).P;
+    
+    if (maxIterations > 10)
+        if (mod(iterationsCounter, 10) == 0) 
+            figure
+            imshow(imageData(imageIndex).image, 'InitialMagnification', 200)
+            hold on
+        end
+    else
+        figure
+        imshow(imageData(imageIndex).image, 'InitialMagnification', 200)
+        hold on
+    end
     
     for jj=1:length(imageData(imageIndex).XYmm)
     
@@ -426,15 +447,29 @@ while iterationsCounter < maxIterations + 1
             imageData(imageIndex).XYmm(jj, 2); 0; 1];
         projPointX = (P_plot(1, :) * pointSpace) / (P_plot(3, :) * pointSpace);
         projPointY = (P_plot(2, :) * pointSpace) / (P_plot(3, :) * pointSpace);
+        %newPointX = imageData(imageIndex).XYpixels(jj, 1); % currently holding new theoretical coordinates
+        %newPointY = imageData(imageIndex).XYpixels(jj, 2);
+        
+        rd_2 = ((projPointX - u_0)/alpha_u)^2 + ((projPointY - v_0)/alpha_v)^2;
+        compensatedX = (projPointX - u_0) * (1 + k_1 * rd_2 + k_2 * rd_2 * rd_2) + u_0;
+        compensatedY = (projPointY - v_0) * (1 + k_1 * rd_2 + k_2 * rd_2 * rd_2) + v_0;
+        
         imagePointX = imageData(imageIndex).checkerboardPixels(jj, 1);
         imagePointY = imageData(imageIndex).checkerboardPixels(jj, 2);
         
-        plot(imagePointX, imagePointY, 'r+')
-        plot(projPointX, projPointY, 'g+')
+        if (maxIterations > 10)
+            if (mod(iterationsCounter, 10) == 0)
+                plot(imagePointX, imagePointY, 'r+')
+                plot(compensatedX, compensatedY, 'g+')
+            end
+        else
+            plot(imagePointX, imagePointY, 'r+')
+            plot(compensatedX, compensatedY, 'g+')
+        end
 
         totalReprojectionError = totalReprojectionError +...
-            (projPointX - imagePointX)^2 +...
-            (projPointY - imagePointY)^2;
+            (compensatedX - imagePointX)^2 +...
+            (compensatedY - imagePointY)^2;
     end
     
     totalErrors(iterationsCounter, 1) = totalReprojectionError;
@@ -445,7 +480,7 @@ end
 % superimpose cylinder
 
 r = 120; % in mm
-h = -60; % in mm
+h = -60; % in mm, working with orthogonal R?
 x = 150; % in mm
 y = 150; % in mm
 
@@ -462,20 +497,54 @@ imshow(imageData(imageIndex).image, 'InitialMagnification', 200)
 hold on
 
 P_plot = imageData(imageIndex).P;
+u_0 = imageData(imageIndex).K(1,3);
+v_0 = imageData(imageIndex).K(2,3);
+alpha_u = imageData(imageIndex).K(1,1);
+skew_angle = acot(imageData(imageIndex).K(1,2)/alpha_u); % cotan = 1/tan, inverse is acotan
+alpha_v = imageData(imageIndex).K(2,2) * sin(skew_angle);
+k_1 =  imageData(imageIndex).k_1;
+k_2 = imageData(imageIndex).k_2;
 
-for kk=1:length(X)
-    pointSpace = [X(2, kk); Y(2, kk); Z(2, kk); 1];
-    projPointX = (P_plot(1, :) * pointSpace) / (P_plot(3, :) * pointSpace);
-    projPointY = (P_plot(2, :) * pointSpace) / (P_plot(3, :) * pointSpace);
-    
-    plot(projPointX, projPointY, 'g+')
-    
-    pointSpace = [X(1, kk); Y(1, kk); Z(1, kk); 1];
-    projPointX = (P_plot(1, :) * pointSpace) / (P_plot(3, :) * pointSpace);
-    projPointY = (P_plot(2, :) * pointSpace) / (P_plot(3, :) * pointSpace);
-    
-    plot(projPointX, projPointY, 'r+')
+spacePoints_1 = [X(1, :); Y(1, :); Z(1, :); ones(1, length(X(1, :)))]; % 4x21 matrix
+spacePoints_2 = [X(2, :); Y(2, :); Z(2, :); ones(1, length(X(2, :)))];
+
+homProjection_1 = P_plot * spacePoints_1;
+homProjection_2 = P_plot * spacePoints_2;
+
+projection_1 = [homProjection_1(1, :)./homProjection_1(3, :);...
+    homProjection_1(2, :)./homProjection_1(3, :)];
+projection_2 = [homProjection_2(1, :) ./ homProjection_2(3, :);...
+    homProjection_2(2, :) ./ homProjection_2(3, :)];
+
+compensatedPoints_1 = zeros(2, length(projection_1));
+compensatedPoints_2 = zeros(2, length(projection_2));
+
+for kk=1:length(compensatedPoints_1)
+    rd_2 = ((projection_1(1, kk) - u_0)/alpha_u)^2 + ((projection_1(2, kk) - v_0)/alpha_v)^2;
+    compensatedPoints_1(1, kk) = (projection_1(1, kk) - u_0) * (1 + k_1 * rd_2 + k_2 * rd_2 * rd_2) + u_0;
+    compensatedPoints_1(2, kk) = (projection_1(2, kk) - v_0) * (1 + k_1 * rd_2 + k_2 * rd_2 * rd_2) + v_0;
+    compensatedPoints_2(1, kk) = (projection_2(1, kk) - u_0) * (1 + k_1 * rd_2 + k_2 * rd_2 * rd_2) + u_0;
+    compensatedPoints_2(2, kk) = (projection_2(2, kk) - v_0) * (1 + k_1 * rd_2 + k_2 * rd_2 * rd_2) + v_0;
 end
+
+shapes = zeros(2, 2 * length(X(1, :)));
+
+
+for kk=1:length(compensatedPoints_1)
+    shapes(1, 2 * kk - 1) = compensatedPoints_1(1, kk); % odd columns
+    shapes(1, 2 * kk) = compensatedPoints_1(2, kk); % even columns
+end
+
+for kk=1:length(compensatedPoints_2)
+    shapes(2, 2 * kk - 1) = compensatedPoints_2(1, kk);
+    shapes(2, 2 * kk) = compensatedPoints_2(2, kk);
+end
+
+positions = cell(2, 1);
+positions{1, 1} = shapes(1, :);
+positions{2, 1} = shapes(2, :);
+   
+showShape('polygon', positions, 'Color', {'red', 'green'}, 'Opacity', 0.7)
 %%
 % trying problem - based approach to solve nonlinear system of equations
 % using optimization toolbox
@@ -505,11 +574,13 @@ opts = optimoptions('fsolve', 'SpecifyObjectiveGradient', true);
 function [F, J] = distortionCompensation(x)
     global k_1;
     global k_2;
-    global pointDistortedX;
-    global pointDistortedY;
+    %global pointDistortedX;
+    %global pointDistortedY;
+    global checkNormalizedX;
+    global checkNormalizedY;
     F = zeros(2, 1);
-    F(1, 1) = x(1) * (1 + k_1 * (x(1)^2 + x(2)^2) + k_2 * (x(1)^4 + 2 * (x(1)^2) * (x(2)^2) + x(2)^4)) - pointDistortedX;
-    F(2, 1) = x(2) * (1 + k_1 * (x(1)^2 + x(2)^2) + k_2 * (x(1)^4 + 2 * (x(1)^2) * (x(2)^2) + x(2)^4)) - pointDistortedY;
+    F(1, 1) = x(1) * (1 + k_1 * (x(1)^2 + x(2)^2) + k_2 * (x(1)^4 + 2 * (x(1)^2) * (x(2)^2) + x(2)^4)) - checkNormalizedX;
+    F(2, 1) = x(2) * (1 + k_1 * (x(1)^2 + x(2)^2) + k_2 * (x(1)^4 + 2 * (x(1)^2) * (x(2)^2) + x(2)^4)) - checkNormalizedY;
 
     J = zeros(2, 2);
     J(1, 1) = 1 + 3 * k_1 * (x(1)^2) + k_1 * (x(2)^2) + 5 * k_2 * (x(1)^4) + 6 * k_2 * (x(1)^2) * (x(2)^2) + k_2 * (x(2)^4);
