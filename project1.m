@@ -211,7 +211,7 @@ end
 % get intrinsic parameters and rd
 
 iterationsCounter = 1;
-maxIterations = 100;
+maxIterations = 10;
 totalErrors = zeros(maxIterations, 1);
 k_vectors = zeros(imagesNumber * maxIterations, 2);
 
@@ -405,7 +405,6 @@ while iterationsCounter < maxIterations + 1
             imageData(ii).XYpixels(jj, 1) = compensatedX; % compensate
             imageData(ii).XYpixels(jj, 2) = compensatedY; % compensate
             
-            % TODO compute new P with compensated coordinates
             % iterate, using new coordinates with matrix P
         end
     end
