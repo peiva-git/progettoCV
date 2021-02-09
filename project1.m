@@ -186,7 +186,6 @@ for jj=1:length(imageData(imageIndex).XYmm)
     
     pointSpace = [imageData(imageIndex).XYmm(jj, 1);...
         imageData(imageIndex).XYmm(jj, 2); 0; 1];
-    projection = P * pointSpace;
     projPointX = (P(1, :) * pointSpace) / (P(3, :) * pointSpace);
     projPointY = (P(2, :) * pointSpace) / (P(3, :) * pointSpace);
     imagePointX = imageData(imageIndex).XYpixels(jj, 1);
@@ -503,7 +502,7 @@ for ii=1:imagesNumber
     imshow(imageData(ii).image, 'InitialMagnification', 200)
     hold on
     
-    imageData(ii).P = P_plot; % projection not working with orthogonal R
+    P_plot = imageData(ii).P; % projection not working with orthogonal R
     u_0 = imageData(ii).K(1,3);
     v_0 = imageData(ii).K(2,3);
     alpha_u = imageData(ii).K(1,1);
