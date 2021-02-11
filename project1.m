@@ -212,9 +212,13 @@ end
 % get intrinsic parameters and rd
 
 iterationsCounter = 1;
-maxIterations = 50;
+maxIterations = 10;
 totalErrors = zeros(maxIterations, 1);
 k_vectors = zeros(imagesNumber * maxIterations, 2);
+exitflags = zeros(imagesNumber * maxIterations * length(imageData(imageIndex).XYmm), 1);
+outputs = cell(imagesNumber * maxIterations * length(imageData(imageIndex).XYmm), 1);
+fvals = cell(imagesNumber * maxIterations * length(imageData(imageIndex).XYmm), 1);
+solutions = cell(imagesNumber * maxIterations * length(imageData(imageIndex).XYmm), 1);
 
 % first build linear system to estimate k using all correspondences in
 % the image, for each image (need all images to estimate P again)
@@ -394,14 +398,18 @@ while iterationsCounter < maxIterations + 1
             x0 = [checkNormalizedX; checkNormalizedY]; % search close to ideal values
             
             % try solution with fsolve
-            opts = optimoptions(@fsolve, 'UseParallel', true, 'Jacobian', 'on');
-            [sol, ~, ~, ~, ~] = fsolve(@distortionCompensation, x0, opts); 
+            opts = optimoptions('fsolve', 'UseParallel', true, 'SpecifyObjectiveGradient', true);
+            [sol, fval, exitflag, output, ~] = fsolve(@distortionCompensation, x0, opts);
+            
+            exitflags(jj + length(imageData(ii).XYmm) * ii * (iterationsCounter - 1), 1) = exitflag;
+            outputs{jj + length(imageData(ii).XYmm) * ii * (iterationsCounter - 1), 1} = output;
+            solutions{jj + length(imageData(ii).XYmm) * ii * (iterationsCounter - 1), 1} = sol;
             
             %[sol, ~, ~] = solve(nonlinearCompensation , x0);
             
             u_sol = alpha_u * sol(1) + u_0;
             v_sol = alpha_v * sol(2) + v_0;
-            rd_2 = ((u_sol - u_0)/alpha_u)^2 + ((v_sol - v_0)/alpha_v)^2;
+            %rd_2 = ((u_sol - u_0)/alpha_u)^2 + ((v_sol - v_0)/alpha_v)^2;
             
             %compensatedX = (u_sol - u_0) * (1 + k_1 * rd_2 + k_2 * rd_2 * rd_2) + u_0;
             %compensatedY = (v_sol - v_0) * (1 + k_1 * rd_2 + k_2 * rd_2 * rd_2) + v_0;
@@ -474,6 +482,8 @@ while iterationsCounter < maxIterations + 1
     totalErrors(iterationsCounter, 1) = totalReprojectionError;
     
     iterationsCounter = iterationsCounter + 1;
+    
+    pause(1)
 end
 
 figure
@@ -493,6 +503,7 @@ Y = Y + y;
 Z = Z * h;
 
 % images 1,2,4,6,11,12,13,15,17,18,19 working with negative Z coordinate
+% depends on current estimation, not always the same
 % red should be below
 % criterion could be sign of det(H)? why?
 
@@ -511,12 +522,22 @@ for ii=1:imagesNumber
     k_1 =  imageData(ii).k_1;
     k_2 = imageData(ii).k_2;
     
+    % criterion to compensate wth negative coordinates
+    if (det(imageData(ii).H) > 0)
+        for zz=1:length(Z(2, :))
+            Z(2, zz) = - h;
+        end
+    else
+        for zz=1:length(Z(2, :))
+            Z(2, zz) = h;
+        end
+    end
+    
     spacePoints_1 = [X(1, :); Y(1, :); Z(1, :); ones(1, length(X(1, :)))]; % 4x21 matrix
     spacePoints_2 = [X(2, :); Y(2, :); Z(2, :); ones(1, length(X(2, :)))];
     
     homProjection_1 = P_plot * spacePoints_1;
     homProjection_2 = P_plot * spacePoints_2;
-    
     projection_1 = [homProjection_1(1, :)./homProjection_1(3, :);...
         homProjection_1(2, :)./homProjection_1(3, :)];
     projection_2 = [homProjection_2(1, :) ./ homProjection_2(3, :);...
@@ -588,8 +609,8 @@ function [F, J] = distortionCompensation(x)
     global checkNormalizedX;
     global checkNormalizedY;
     F = zeros(2, 1);
-    F(1, 1) = x(1) * (1 + k_1 * (x(1)^2 + x(2)^2) + k_2 * (x(1)^4 + 2 * (x(1)^2) * (x(2)^2) + x(2)^4)) - checkNormalizedX;
-    F(2, 1) = x(2) * (1 + k_1 * (x(1)^2 + x(2)^2) + k_2 * (x(1)^4 + 2 * (x(1)^2) * (x(2)^2) + x(2)^4)) - checkNormalizedY;
+    F(1) = x(1) * (1 + k_1 * (x(1)^2 + x(2)^2) + k_2 * (x(1)^4 + 2 * (x(1)^2) * (x(2)^2) + x(2)^4)) - checkNormalizedX;
+    F(2) = x(2) * (1 + k_1 * (x(1)^2 + x(2)^2) + k_2 * (x(1)^4 + 2 * (x(1)^2) * (x(2)^2) + x(2)^4)) - checkNormalizedY;
 
     J = zeros(2, 2);
     J(1, 1) = 1 + 3 * k_1 * (x(1)^2) + k_1 * (x(2)^2) + 5 * k_2 * (x(1)^4) + 6 * k_2 * (x(1)^2) * (x(2)^2) + k_2 * (x(2)^4);
