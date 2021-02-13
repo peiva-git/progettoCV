@@ -1,9 +1,7 @@
 imagesNumber = 20;
 squareSize = 30; % 30 mm square size
 
-%global pointDistortedX;
-%global pointDistortedY;
-global checkNormalizedX;
+global checkNormalizedX; % used inside function
 global checkNormalizedY;
 global k_1; % used inside function
 global k_2;
@@ -19,10 +17,8 @@ for ii=1:imagesNumber
     imageFileName = strcat('Image', string(ii), '.tif');
     images(:, :, ii) = imread(fullfile('images', imageFileName));
 end
-
 %%
 % load points using code in lab1 with imageData structure array
-% added board size for each image
 
 clear imageData
 
@@ -35,13 +31,10 @@ for ii=1:imagesNumber
     imageData(ii).checkerboardPixels = imagePoints;
     imageData(ii).boardSize = boardSize;
 end
-
 %%
 % establish correspondences, considering square size
 
 for ii=1:imagesNumber
-%    figure
-%    imshow(imageData(ii).image, 'InitialMagnification', 300)
     
     clear Xmm Ymm
     for jj=1:length(imageData(ii).XYpixels)
@@ -49,17 +42,9 @@ for ii=1:imagesNumber
         Xmm = (col - 1) * squareSize;
         Ymm = (row - 1) * squareSize;
         
-        imageData(ii).XYmm(jj, :) = [Xmm, Ymm];
-%{        
-        hndtxt = text(imageData(ii).XYpixels(jj, 1),...
-            imageData(ii).XYpixels(jj, 2),...
-            num2str([Xmm, Ymm]));
-        set(hndtxt, 'fontsize', 14, 'color', [1 mod(row, 2) * mod(col, 2) 0]);
-%}        
+        imageData(ii).XYmm(jj, :) = [Xmm, Ymm];       
     end 
-%    pause(1)
 end
-
 %%
 % zhang method applied knowing homography
 % homography estimation provided in lab1, esimate now
@@ -67,8 +52,7 @@ end
 for ii=1:imagesNumber
     XYpixels = imageData(ii).XYpixels;
     XYmm = imageData(ii).XYmm;
-    A = [];
-%    b = [];
+    A = zeros(2 * length(XYpixels), 9);
     
     for jj=1:length(XYpixels)
         
@@ -79,9 +63,8 @@ for ii=1:imagesNumber
         
         m = [Xmm; Ymm; 1];
         zero = [0; 0; 0];
-        A = [A; m' zero' -Xpixels*m'; zero' m' -Ypixels*m'];
-%        b = [b; 0; 0];
-        
+        A(2 * jj - 1, :) = [m' zero' -Xpixels*m']; % odd rows
+        A(2 * jj, :) = [zero' m' -Ypixels*m']; % even rows       
     end
     
     [~, ~, V] = svd(A);
@@ -89,56 +72,30 @@ for ii=1:imagesNumber
     
     imageData(ii).H = reshape(h, [3 3])';
     
-end
-%%
-% check if it works, superimpose rectangle
-% from lab1
-
-for ii=1:imagesNumber
-    figure
-    imshow(imageData(ii).image, 'InitialMagnification', 200)
-    hold on
+    % change det to prevent flipped z axis
+    imageData(ii).H = nthroot(- 1/det(imageData(ii).H), 3) * imageData(ii).H;
     
-    width = 150;
-    height = 120;
-    
-    topLeftCornerX = 90;
-    topLeftCornerY = 60;
-    
-    rectLengthX = topLeftCornerX + [0 0 width width];
-    rectLengthY = topLeftCornerY + [0 height height 0];
-    
-    homogeneous = [rectLengthX; rectLengthY; ones(1, length(rectLengthX))];
-    homProjection = imageData(ii).H * homogeneous;
-    
-    projection = [homProjection(1, :)./homProjection(3, :);...
-        homProjection(2, :)./homProjection(3, :)];
-    
-    projection(:, end + 1) = projection(:, 1);
-    
-    plot(projection(1, :), projection(2, :), 'r', 'LineWidth', 3);
-    pause(1)
 end
 %%
 % POINT 1
-% Zhang method, obtain b vector (L2-p73)
+% Zhang's method, obtain b vector (L2-p73)
 
-V = [];
+V = zeros(2 * imagesNumber, 6);
 
 for ii=1:imagesNumber
     currentH = imageData(ii).H;
     
-    V = [V; compute_v_ij(1, 2, currentH)';...
-        (compute_v_ij(1, 1,  currentH) - compute_v_ij(2, 2, currentH))']; 
+    V(2 * ii - 1, :) = compute_v_ij(1, 2, currentH)'; % odd rows
+    V(2 * ii, :) = (compute_v_ij(1, 1,  currentH) - compute_v_ij(2, 2, currentH))'; % even rows 
 end
 
 [~, ~, S] = svd(V);
 b = S(:, end);
 
-% need to divide to have positive definite B? (defined up to scale factor)
+% divide to have positive definite B (defined up to scale factor)
 b = b/b(6);
 
-% now to build B matrix (L2-p73)
+% now build B matrix (L2-p73)
 
 B = [b(1) b(2) b(4); b(2) b(3) b(5); b(4) b(5) b(6)];
 L = chol(B, 'lower');
@@ -152,7 +109,7 @@ for ii=1:imagesNumber
     currentH = imageData(ii).H;
     lambda = 1/norm(K \ currentH(:, 1)); % using of inv discuraged by matlab
     
-    r_1 = lambda * (K \ currentH(:, 1)); % WRONG R RESULT WITHOUT EXTERNAL PARENTHESIS
+    r_1 = lambda * (K \ currentH(:, 1));
     r_2 = lambda * (K \ currentH(:, 2));
     R = [r_1, r_2, cross(r_1, r_2)];
     
@@ -168,9 +125,9 @@ for ii=1:imagesNumber
 end
 %%
 % POINT 2
+% obtain projection matrix P
 % compute and show reprojected points for chosen image
-% compute total reprojection error
-% get matrix P
+% compute total reprojection error for chosen image
 
 imageIndex = 1;
 
@@ -199,29 +156,27 @@ for jj=1:length(imageData(imageIndex).XYmm)
 end
 %%
 % POINT 3
-%add radial distortion compensation 
-%(Lecture 2, page 70) to the basic Zhang’s calibration procedure
+% add radial distortion compensation 
+% (L2-p70) to the basic Zhang’s calibration procedure
 
-%Given m and m' (correspondences) do the following:
+% given m and m' (correspondences) do the following:
 % 1 - estimate P and get intrinsic parameters from P
 % 2 - estimate k1 and k2
 % 3 - compensate for radial distortion and get new m'(i) 
 % 4 - go to the step 1 until convergence of P and k1 and k2
 
-% We have already P = K [R | t]
-% get intrinsic parameters and rd
+% specify number of iterations
+maxIterations = 50;
 
 iterationsCounter = 1;
-maxIterations = 10;
-totalErrors = zeros(maxIterations, 1);
+
+totalErrors_reprojection = zeros(maxIterations, 1);
+totalErrors_k = zeros(maxIterations - 1, 1);
 k_vectors = zeros(imagesNumber * maxIterations, 2);
+
 exitflags = zeros(imagesNumber * maxIterations * length(imageData(imageIndex).XYmm), 1);
 outputs = cell(imagesNumber * maxIterations * length(imageData(imageIndex).XYmm), 1);
-fvals = cell(imagesNumber * maxIterations * length(imageData(imageIndex).XYmm), 1);
 solutions = cell(imagesNumber * maxIterations * length(imageData(imageIndex).XYmm), 1);
-
-% first build linear system to estimate k using all correspondences in
-% the image, for each image (need all images to estimate P again)
 
 while iterationsCounter < maxIterations + 1
     
@@ -237,7 +192,6 @@ while iterationsCounter < maxIterations + 1
         XYmm = imageData(ii).XYmm;
         
         A = zeros(2 * length(XYpixels), 9);
-        %    b = [];
         
         for jj=1:length(XYpixels)
             
@@ -250,14 +204,14 @@ while iterationsCounter < maxIterations + 1
             zero = [0; 0; 0];
             A(2 * jj - 1, :) = [m' zero' -Xpixels*m']; % odd rows
             A(2 * jj, :) = [zero' m' -Ypixels*m']; % even rows
-            %        b = [b; 0; 0];
             
         end
         
         [~, ~, V] = svd(A);
         h = V(:, end);
         
-        imageData(ii).H = reshape(h, [3 3])';       
+        imageData(ii).H = reshape(h, [3 3])';  
+        imageData(ii).H = nthroot(- 1/det(imageData(ii).H), 3) * imageData(ii).H;
     end
     
     % now find K, R and t (intrinsic and extrinsic parameters)
@@ -274,10 +228,10 @@ while iterationsCounter < maxIterations + 1
     [~, ~, S] = svd(V);
     b = S(:, end);
     
-    % need to divide to have positive definite B? (defined up to scale factor)
+    % need to divide to have positive definite B (defined up to scale factor)
     b = b/b(6);
     
-    % now to build B matrix (L2-p73)
+    % now build B matrix (L2-p73)
     
     B = [b(1) b(2) b(4); b(2) b(3) b(5); b(4) b(5) b(6)];
     L = chol(B, 'lower');
@@ -307,9 +261,10 @@ while iterationsCounter < maxIterations + 1
         % finally compute matrix P
         imageData(ii).P = K * [imageData(ii).R, imageData(ii).t];
     end
-    
-    
+     
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+
+% for each image, estimate k and then compensate for radial distortion
 
     for ii=1:imagesNumber
         
@@ -332,13 +287,12 @@ while iterationsCounter < maxIterations + 1
             projPointX = (P(1, :) * pointSpace) / (P(3, :) * pointSpace); %u actual projections
             projPointY = (P(2, :) * pointSpace) / (P(3, :) * pointSpace); %v actual projections
             
-            %imagePointX = imageData(ii).XYpixels(jj, 1); %u^ distorted projections
-            %imagePointY = imageData(ii).XYpixels(jj, 2); %v^ distorted projections
-            
             pointCheckerboardX = imageData(ii).checkerboardPixels(jj, 1); % u^ effective distorted projections
             pointCheckerboardY = imageData(ii).checkerboardPixels(jj, 2); % v^ effective distorted projections
             
             rd_2 = ((projPointX - u_0)/alpha_u)^2 + ((projPointY - v_0)/alpha_v)^2;
+            
+            % build linear system using all correspondences
             
             A(2 * jj - 1, 1) = (projPointX - u_0) * rd_2; % odd rows
             A(2 * jj - 1, 2) = (projPointX - u_0) * rd_2 * rd_2; % odd rows
@@ -350,80 +304,73 @@ while iterationsCounter < maxIterations + 1
         end
         
         % now estimate k using least squares
-        k = (A'*A)\A' * b; % k is 2x1 vector
+        k = (A' * A)\A' * b; % k is 2x1 vector
         k_1 = k(1, 1);
         k_2 = k(2, 1);
         imageData(ii).k_1 = k_1;
         imageData(ii).k_2 = k_2;
         
-        k_vectors(ii + (iterationsCounter - 1) * imagesNumber, :) = k;
+        % save all values of k
+        k_vectors(ii + (iterationsCounter - 1) * imagesNumber, 1) = k_1;
+        k_vectors(ii + (iterationsCounter - 1) * imagesNumber, 2) = k_2;
         
         % now build nonlinear system to compensate distortion
+        % for each correspondence
         
         for jj=1:length(imageData(ii).XYmm)
-            
-            clear nonLinearCompensation coord x0 % clear from previous step
-            %nonlinearCompensation = eqnproblem; % optimization toolbox
-            %coord = optimvar('coord', 2);
-            
-            %pointSpace = [imageData(ii).XYmm(jj, 1);...
-            %    imageData(ii).XYmm(jj, 2); 0; 1];
-            
-            %projPointX = (P(1, :) * pointSpace) / (P(3, :) * pointSpace); %u actual projections
-            %projPointY = (P(2, :) * pointSpace) / (P(3, :) * pointSpace); %v actual projections
-            
-            %pointProjX = (projPointX - u_0) / alpha_u; % x actual coordinates
-            %pointProjY = (projPointY - v_0) / alpha_v; % y actual coordinates
-            
-            %imagePointX = imageData(ii).XYpixels(jj, 1); % u^
-            %imagePointY = imageData(ii).XYpixels(jj, 2); % v^
-            
-            %pointDistortedX = (imagePointX - u_0) / alpha_u; % x^ distorted coordinates, used inside function (global)
-            %pointDistortedY = (imagePointY - v_0) / alpha_v; % y^ distorted coordinates
-            
+                
             pointCheckerboardX = imageData(ii).checkerboardPixels(jj, 1); % u^ effective distorted coordinates
             pointCheckerboardY = imageData(ii).checkerboardPixels(jj, 2); % v^ effective distorted coordinates
+            
+            pointSpace = [imageData(ii).XYmm(jj, 1);...
+                imageData(ii).XYmm(jj, 2); 0; 1];
+            
+            projPointX = (P(1, :) * pointSpace) / (P(3, :) * pointSpace); %u actual projections
+            projPointY = (P(2, :) * pointSpace) / (P(3, :) * pointSpace); %v actual projections
+            
+            pointProjX = (projPointX - u_0) / alpha_u; % x actual coordinates
+            pointProjY = (projPointY - v_0) / alpha_v; % y actual coordinates
             
             checkNormalizedX = (pointCheckerboardX - u_0) / alpha_u; % normalized, used inside function
             checkNormalizedY = (pointCheckerboardY - v_0) / alpha_v; % normalized
             
-            %equation_1 = coord(1) * (1 + k_1 * (coord(1)^2 + coord(2)^2) + k_2 * (coord(1)^4 + 2 * (coord(1)^2) * (coord(2)^2) + coord(2)^4)) - pointDistortedX == 0;
-            %equation_2 = coord(2) * (1 + k_1 * (coord(1)^2 + coord(2)^2) + k_2 * (coord(1)^4 + 2 * (coord(1)^2) * (coord(2)^2) + coord(2)^4)) - pointDistortedY == 0;
-            
-            %nonlinearCompensation.Equations.equation_1 = equation_1;
-            %nonlinearCompensation.Equations.equation_2 = equation_2;
-            
             % solve for each pair of coordinates
             
-            x0 = [checkNormalizedX; checkNormalizedY]; % search close to ideal values
+            x0 = [pointProjX; pointProjY]; % search close to actual values
             
-            % try solution with fsolve
+            % solution with fsolve
+            % use Parallel Computing Toolbox and Jacobian specified in
+            % @distortionCompensation function
             opts = optimoptions('fsolve', 'UseParallel', true, 'SpecifyObjectiveGradient', true);
-            [sol, fval, exitflag, output, ~] = fsolve(@distortionCompensation, x0, opts);
+            [sol, ~, exitflag, output, ~] = fsolve(@distortionCompensation, x0, opts);
             
             exitflags(jj + length(imageData(ii).XYmm) * ii * (iterationsCounter - 1), 1) = exitflag;
             outputs{jj + length(imageData(ii).XYmm) * ii * (iterationsCounter - 1), 1} = output;
             solutions{jj + length(imageData(ii).XYmm) * ii * (iterationsCounter - 1), 1} = sol;
             
-            %[sol, ~, ~] = solve(nonlinearCompensation , x0);
+            % solution found, assign new value
+            if (exitflag > 0)
             
-            u_sol = alpha_u * sol(1) + u_0;
-            v_sol = alpha_v * sol(2) + v_0;
-            %rd_2 = ((u_sol - u_0)/alpha_u)^2 + ((v_sol - v_0)/alpha_v)^2;
+                u_sol = alpha_u * sol(1) + u_0;
+                v_sol = alpha_v * sol(2) + v_0;
             
-            %compensatedX = (u_sol - u_0) * (1 + k_1 * rd_2 + k_2 * rd_2 * rd_2) + u_0;
-            %compensatedY = (v_sol - v_0) * (1 + k_1 * rd_2 + k_2 * rd_2 * rd_2) + v_0;
+                % store new theoretical projections
+                % use same variable, values will be reused to estimate P again
+                imageData(ii).XYpixels(jj, 1) = u_sol;
+                imageData(ii).XYpixels(jj, 2) = v_sol;
+                
+            % solution not found, keep previous value, print message
+            elseif (exitflag == 0)
+                    fprintf('Exceeded max evaluations, func evaluations: %u, iterations: %u\nError message: %s\n', output.funcCount, output.iterations, output.message)
+            else
+                fprintf('%s\n', output.message)
+            end
             
-            % store new compensated coordinates
-            % use same variable, values will be now reused to estimate P again
-            imageData(ii).XYpixels(jj, 1) = u_sol;
-            imageData(ii).XYpixels(jj, 2) = v_sol; 
-            
-            % iterate, using new coordinates with matrix P
+            % iterate, estimate new P
         end
     end
     
-    % check error only on one image
+    % check error and convergence only on one image
     
     totalReprojectionError = 0;
     
@@ -448,15 +395,15 @@ while iterationsCounter < maxIterations + 1
         hold on
     end
     
+    % plot reprojected point for chosen image and compute error
     for jj=1:length(imageData(imageIndex).XYmm)
     
         pointSpace = [imageData(imageIndex).XYmm(jj, 1);...
             imageData(imageIndex).XYmm(jj, 2); 0; 1];
         projPointX = (P_plot(1, :) * pointSpace) / (P_plot(3, :) * pointSpace);
         projPointY = (P_plot(2, :) * pointSpace) / (P_plot(3, :) * pointSpace);
-        %newPointX = imageData(imageIndex).XYpixels(jj, 1); % currently holding new theoretical coordinates
-        %newPointY = imageData(imageIndex).XYpixels(jj, 2);
         
+        % add radial distortion compensation
         rd_2 = ((projPointX - u_0)/alpha_u)^2 + ((projPointY - v_0)/alpha_v)^2;
         compensatedX = (projPointX - u_0) * (1 + k_1 * rd_2 + k_2 * rd_2 * rd_2) + u_0;
         compensatedY = (projPointY - v_0) * (1 + k_1 * rd_2 + k_2 * rd_2 * rd_2) + v_0;
@@ -479,7 +426,15 @@ while iterationsCounter < maxIterations + 1
             (compensatedY - imagePointY)^2;
     end
     
-    totalErrors(iterationsCounter, 1) = totalReprojectionError;
+    totalErrors_reprojection(iterationsCounter, 1) = totalReprojectionError;
+    
+    % consider difference in k_1 and k_2 between current and previous
+    % iteration for chosen image
+    if (iterationsCounter > 1)
+        
+        totalErrors_k(iterationsCounter - 1, 1) = (k_vectors(imageIndex + imagesNumber * (iterationsCounter - 1), 1) - k_vectors(imageIndex + imagesNumber * (iterationsCounter - 2), 1))^2 +...
+            (k_vectors(imageIndex + imagesNumber * (iterationsCounter - 1), 2) - k_vectors(imageIndex + imagesNumber * (iterationsCounter - 2), 2))^2;
+    end
     
     iterationsCounter = iterationsCounter + 1;
     
@@ -487,12 +442,15 @@ while iterationsCounter < maxIterations + 1
 end
 
 figure
-plot(totalErrors)
+plot(totalErrors_reprojection)
+
+figure
+plot(totalErrors_k)
 %%
 % superimpose cylinder
 
 r = 120; % in mm
-h = 60; % in mm, working with orthogonal R?
+h = 60; % in mm
 x = 150; % in mm
 y = 150; % in mm
 
@@ -502,18 +460,13 @@ X = X + x;
 Y = Y + y;
 Z = Z * h;
 
-% images 1,2,4,6,11,12,13,15,17,18,19 working with negative Z coordinate
-% depends on current estimation, not always the same
-% red should be below
-% criterion could be sign of det(H)? why?
-
 for ii=1:imagesNumber
     
     figure
     imshow(imageData(ii).image, 'InitialMagnification', 200)
     hold on
     
-    P_plot = imageData(ii).P; % projection not working with orthogonal R
+    P_plot = imageData(ii).P;
     u_0 = imageData(ii).K(1,3);
     v_0 = imageData(ii).K(2,3);
     alpha_u = imageData(ii).K(1,1);
@@ -522,17 +475,8 @@ for ii=1:imagesNumber
     k_1 =  imageData(ii).k_1;
     k_2 = imageData(ii).k_2;
     
-    % criterion to compensate wth negative coordinates
-    if (det(imageData(ii).H) > 0)
-        for zz=1:length(Z(2, :))
-            Z(2, zz) = - h;
-        end
-    else
-        for zz=1:length(Z(2, :))
-            Z(2, zz) = h;
-        end
-    end
-    
+    % superimpose two sets of points on image
+    % first project cylinder points
     spacePoints_1 = [X(1, :); Y(1, :); Z(1, :); ones(1, length(X(1, :)))]; % 4x21 matrix
     spacePoints_2 = [X(2, :); Y(2, :); Z(2, :); ones(1, length(X(2, :)))];
     
@@ -546,6 +490,7 @@ for ii=1:imagesNumber
     compensatedPoints_1 = zeros(2, length(projection_1));
     compensatedPoints_2 = zeros(2, length(projection_2));
     
+    % apply radial distortion compensation
     for kk=1:length(compensatedPoints_1)
         rd_2 = ((projection_1(1, kk) - u_0)/alpha_u)^2 + ((projection_1(2, kk) - v_0)/alpha_v)^2;
         compensatedPoints_1(1, kk) = (projection_1(1, kk) - u_0) * (1 + k_1 * rd_2 + k_2 * rd_2 * rd_2) + u_0;
@@ -554,8 +499,9 @@ for ii=1:imagesNumber
         compensatedPoints_2(2, kk) = (projection_2(2, kk) - v_0) * (1 + k_1 * rd_2 + k_2 * rd_2 * rd_2) + v_0;
     end
     
+    % prepare shapes to plot according to
+    % https://it.mathworks.com/help/vision/ref/showshape.html
     shapes = zeros(2, 2 * length(X(1, :)));
-    
     
     for kk=1:length(compensatedPoints_1)
         shapes(1, 2 * kk - 1) = compensatedPoints_1(1, kk); % odd columns
@@ -571,43 +517,19 @@ for ii=1:imagesNumber
     positions{1, 1} = shapes(1, :);
     positions{2, 1} = shapes(2, :);
     
+    % plot shapes on image
     showShape('polygon', positions, 'Color', {'red', 'green'}, 'Opacity', 0.7)
     pause(1)
 
 end
 %%
-% trying problem - based approach to solve nonlinear system of equations
-% using optimization toolbox
-
-%{
-x = optimvar('x', 2);
-first_eq = x(1)^2 + x(2)^2 == 1;
-second_eq = x(1) + x(2) == 0;
-x0.x = [1 -1]; % must be sufficiently close to find solution
-problem = eqnproblem;
-
-problem.Equations.first_eq = first_eq;
-problem.Equations.second_eq = second_eq;
-show(problem);
-
-[sol, fvak, exitflag] = solve(problem , x0); % correct solution found
-%}
-
-x0 = imageData(imageIndex).checkerboardPixels(1, :);
-opts = optimoptions('fsolve', 'SpecifyObjectiveGradient', true);
-[sol, F, ~, output, J] = fsolve(@distortionCompensation, x0, opts);
-
-%[sol, ~, ~] = solve(nonlinearCompensation , x0);
-
-%%
-% solve using function
+% solve using function and Jacobian
 function [F, J] = distortionCompensation(x)
     global k_1;
     global k_2;
-    %global pointDistortedX;
-    %global pointDistortedY;
     global checkNormalizedX;
     global checkNormalizedY;
+    
     F = zeros(2, 1);
     F(1) = x(1) * (1 + k_1 * (x(1)^2 + x(2)^2) + k_2 * (x(1)^4 + 2 * (x(1)^2) * (x(2)^2) + x(2)^4)) - checkNormalizedX;
     F(2) = x(2) * (1 + k_1 * (x(1)^2 + x(2)^2) + k_2 * (x(1)^4 + 2 * (x(1)^2) * (x(2)^2) + x(2)^4)) - checkNormalizedY;
@@ -618,9 +540,3 @@ function [F, J] = distortionCompensation(x)
     J(2, 1) = 2 * k_1 * x(1) * x(2) + 4 * k_2 * (x(1)^3) * x(2) + 4 * k_2 * x(1) * (x(2)^3);
     J(2, 2) = 1 + 3 * k_1 * (x(2)^2) + k_1 * (x(1)^2) + 5 * k_2 * (x(2)^4) + 6 * k_2 * (x(1)^2) * (x(2)^2) + k_2 * (x(1)^4);
 end
-
-
- 
-
-
-
