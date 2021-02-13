@@ -148,8 +148,8 @@ for jj=1:length(imageData(imageIndex).XYmm)
     imagePointX = imageData(imageIndex).XYpixels(jj, 1);
     imagePointY = imageData(imageIndex).XYpixels(jj, 2);
 
-    plot(imagePointX, imagePointY, 'r+')
-    plot(projPointX, projPointY, 'g+')
+    plot(imagePointX, imagePointY, 'r+', 'MarkerSize', 8)
+    plot(projPointX, projPointY, 'g+', 'MarkerSize', 8)
     
     totalReprojectionError = totalReprojectionError + (projPointX - imagePointX)^2 +...
         (projPointY - imagePointY)^2;
@@ -341,7 +341,7 @@ while iterationsCounter < maxIterations + 1
             % solution with fsolve
             % use Parallel Computing Toolbox and Jacobian specified in
             % @distortionCompensation function
-            opts = optimoptions('fsolve', 'UseParallel', true, 'SpecifyObjectiveGradient', true);
+            opts = optimoptions('fsolve', 'UseParallel', true, 'SpecifyObjectiveGradient', true, 'Display', off);
             [sol, ~, exitflag, output, ~] = fsolve(@distortionCompensation, x0, opts);
             
             exitflags(jj + length(imageData(ii).XYmm) * ii * (iterationsCounter - 1), 1) = exitflag;
@@ -413,12 +413,12 @@ while iterationsCounter < maxIterations + 1
         
         if (maxIterations > 10)
             if (mod(iterationsCounter, 10) == 0)
-                plot(imagePointX, imagePointY, 'r+')
-                plot(compensatedX, compensatedY, 'g+')
+                plot(imagePointX, imagePointY, 'r+', 'MarkerSize', 8)
+                plot(compensatedX, compensatedY, 'g+', 'MarkerSize', 8)
             end
         else
-            plot(imagePointX, imagePointY, 'r+')
-            plot(compensatedX, compensatedY, 'g+')
+            plot(imagePointX, imagePointY, 'r+', 'MarkerSize', 8)
+            plot(compensatedX, compensatedY, 'g+', 'MarkerSize', 8)
         end
 
         totalReprojectionError = totalReprojectionError +...
