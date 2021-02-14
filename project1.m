@@ -1,5 +1,5 @@
-imagesNumber = 20;
-squareSize = 30; % 30 mm square size
+imagesNumber = 20; % set to 10 if using author's images
+squareSize = 30; % 30 mm square size, 22 if using author's images
 
 global checkNormalizedX; % used inside function
 global checkNormalizedY;
@@ -341,7 +341,7 @@ while iterationsCounter < maxIterations + 1
             % solution with fsolve
             % use Parallel Computing Toolbox and Jacobian specified in
             % @distortionCompensation function
-            opts = optimoptions('fsolve', 'UseParallel', true, 'SpecifyObjectiveGradient', true, 'Display', off);
+            opts = optimoptions('fsolve', 'UseParallel', true, 'SpecifyObjectiveGradient', true, 'Display', 'off');
             [sol, ~, exitflag, output, ~] = fsolve(@distortionCompensation, x0, opts);
             
             exitflags(jj + length(imageData(ii).XYmm) * ii * (iterationsCounter - 1), 1) = exitflag;
@@ -449,10 +449,10 @@ plot(totalErrors_k)
 %%
 % superimpose cylinder
 
-r = 120; % in mm
-h = 60; % in mm
-x = 150; % in mm
-y = 150; % in mm
+r = 120; % in mm, 30 if using author's images
+h = 60; % in mm, 30 if using author's images 
+x = 150; % in mm, 60 if using author's images
+y = 150; % in mm, 60 if using author's images
 
 [X, Y, Z] = cylinder(r);
 
